@@ -5,9 +5,7 @@
 #   - no GitHub Actions: o próprio workflow (.github/workflows/ci.yml)
 # =====================================================================
 server:
-  # o Railway informa a porta na variável PORT; na sua máquina continua 8080
   port: ${PORT:8080}
-  # atrás do proxy do Railway: usa o IP e o https reais do cliente (X-Forwarded-*)
   forward-headers-strategy: native
 
 spring:
@@ -27,8 +25,6 @@ spring:
       schema-locations: classpath:schema.sql
       data-locations: classpath:permissions.sql, classpath:auditTrail.sql
 
-server:
-  port: ${PORT:8080}
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: 3600000
