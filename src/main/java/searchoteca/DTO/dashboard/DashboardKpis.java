@@ -6,7 +6,7 @@ public record DashboardKpis(
         long openLoans,
         long delayedLoans,
         long activeStudents,
-        long inactiveStudents,      // ativos sem atividade há mais de 80 dias (depende da RF17 atualizar last_activity)
+        long inactiveStudents,      // ativos sem atividade há mais dias que a configuração "students.inactivity-days"
         long availableCopies,
         long totalCopies,
         long pendingFirstAccess,

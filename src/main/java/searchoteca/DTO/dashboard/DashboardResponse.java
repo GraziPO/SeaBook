@@ -2,14 +2,13 @@ package searchoteca.DTO.dashboard;
 
 import searchoteca.auditTrail.AuditLogModel;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 /** Tudo o que a tela do dashboard precisa, numa única resposta. */
 public record DashboardResponse(
         int periodDays,
-        LocalDate generatedAt,
+        LocalDateTime generatedAt,   // data e hora: a tela mostra "atualizado às HH:mm"
         DashboardKpis kpis,
         List<Diary> diary,
         List<CountByStatus> copiesByStatus,

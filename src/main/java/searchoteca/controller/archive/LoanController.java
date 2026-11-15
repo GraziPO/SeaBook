@@ -25,8 +25,9 @@ public class LoanController {
 
     @PreAuthorize("hasAuthority('loans:view')")
     @GetMapping
-    public ResponseEntity<?> findAll(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(loanService.findPage(page, size));
+    public ResponseEntity<?> findAll(@RequestParam(required = false) String status,
+                                     @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(loanService.findPage(status, page, size));
     }
 
     @PreAuthorize("hasAuthority('loans:view')")
@@ -43,6 +44,14 @@ public class LoanController {
         CustomUserDetails student = (CustomUserDetails) authentication.getPrincipal();
         auditLogService.record(AuditAction.ACCESS,"Acesso ao histórico do usuario");
         return ResponseEntity.ok(loanService.findPageByStudent(student.getUserId(), page, size));
+    }
+
+    /** Área do aluno: os livros de todos os empréstimos dele, com título e exemplar. */
+    @PreAuthorize("hasAuthority('loans:view_own')")
+    @GetMapping("/historico/itens")
+    public ResponseEntity<?> ownItems(Authentication authentication) {
+        CustomUserDetails student = (CustomUserDetails) authentication.getPrincipal();
+        return ResponseEntity.ok(loanService.studentItems(student.getUserId()));
     }
 
     @PreAuthorize("hasAuthority('loans:create')")

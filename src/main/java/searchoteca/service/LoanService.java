@@ -22,7 +22,10 @@ import searchoteca.repository.catalog.CopyRepository;
 import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.archive.LoanItemRepository;
 import searchoteca.repository.archive.LoanRepository;
+import searchoteca.repository.archive.LoanQueryRepository;
 import searchoteca.repository.archive.LoanRulesRepository;
+import searchoteca.DTO.archive.LoanView;
+import searchoteca.DTO.archive.StudentLoanItem;
 import searchoteca.security.CustomUserDetails;
 import searchoteca.service.settings.SettingsService;
 
@@ -48,6 +51,7 @@ public class LoanService {
     private final WaitlistService waitlistService;
     private final SettingsService settingsService;
     private final LoanRulesRepository loanRulesRepository;
+    private final LoanQueryRepository loanQueryRepository;
 
 
     public LoanService(LoanRepository loanRepository,
@@ -59,7 +63,8 @@ public class LoanService {
                        BookRepository bookRepository,
                        WaitlistService waitlistService,
                        SettingsService settingsService,
-                       LoanRulesRepository loanRulesRepository) {
+                       LoanRulesRepository loanRulesRepository,
+                       LoanQueryRepository loanQueryRepository) {
         this.loanRepository = loanRepository;
         this.loanItemRepository = loanItemRepository;
         this.userRepository = userRepository;
@@ -70,16 +75,29 @@ public class LoanService {
         this.waitlistService = waitlistService;
         this.settingsService = settingsService;
         this.loanRulesRepository = loanRulesRepository;
+        this.loanQueryRepository = loanQueryRepository;
     }
 
     public List<LoanModel> findAll() {
         return loanRepository.findAll();
     }
 
-    /** Todos os empréstimos, paginados, do mais recente para o mais antigo (RNF06). */
-    public PageResponse<LoanModel> findPage(int page, int size) {
-        return PageResponse.from(loanRepository.findAll(
-                Paging.of(page, size, Sort.by(Sort.Direction.DESC, "loanDate"))));
+    /**
+     * Lista do operador, paginada, do mais recente para o mais antigo (RNF06), já com o aluno.
+     * status: OPEN (no prazo), OVERDUE (vencido), CLOSED, CANCELLED, ou vazio para todos.
+     */
+    public PageResponse<LoanView> findPage(String status, int page, int size) {
+        String filter = status == null || status.isBlank() ? null : status.trim().toUpperCase();
+        return loanQueryRepository.search(filter, Paging.of(page, size, Sort.unsorted()));
+    }
+
+    /** Área do aluno: os livros de todos os empréstimos dele (abertos e histórico). */
+    public List<StudentLoanItem> studentItems(Long userId) {
+        StudentModel student = studentRepository.findByUserId(userId);
+        if (student == null) {
+            throw new ResourceNotFoundException("Perfil de aluno não encontrado para este usuário.");
+        }
+        return loanQueryRepository.itemsOfStudent(student.getStudentId());
     }
 
     /** Histórico do aluno logado, paginado, do mais recente para o mais antigo. */

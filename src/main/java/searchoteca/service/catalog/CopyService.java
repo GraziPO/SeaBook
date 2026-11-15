@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import searchoteca.DTO.archive.BatchMoveRequest;
 import searchoteca.DTO.archive.BatchMoveResult;
 import searchoteca.DTO.archive.CopyLabel;
+import searchoteca.DTO.archive.CopyLookup;
 import searchoteca.DTO.archive.CopyRequest;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
@@ -15,6 +16,7 @@ import searchoteca.model.Books.CopyModel;
 import searchoteca.model.LocationModel;
 import searchoteca.model.Books.status.CopyStatus;
 import searchoteca.repository.catalog.BookRepository;
+import searchoteca.repository.catalog.CopyQueryRepository;
 import searchoteca.repository.catalog.CopyRepository;
 import searchoteca.repository.archive.LocationRepository;
 import searchoteca.service.WaitlistService;
@@ -29,14 +31,27 @@ public class CopyService {
     private final BookRepository bookRepository;
     private final AuditLogService auditLogService;
     private final WaitlistService waitlistService;
+    private final CopyQueryRepository copyQueryRepository;
     private static final int MAX_BATCH = 200; //limite de cópias que podem ser localizadas por vez
 
-    public CopyService(CopyRepository copyRepository, LocationRepository locationRepository, BookRepository bookRepository, AuditLogService auditLogService, WaitlistService waitlistService) {
+    public CopyService(CopyRepository copyRepository, LocationRepository locationRepository, BookRepository bookRepository, AuditLogService auditLogService, WaitlistService waitlistService,
+                       CopyQueryRepository copyQueryRepository) {
         this.copyRepository = copyRepository;
         this.locationRepository = locationRepository;
         this.bookRepository = bookRepository;
         this.auditLogService = auditLogService;
         this.waitlistService = waitlistService;
+        this.copyQueryRepository = copyQueryRepository;
+    }
+
+    /** Exemplar pelo código da etiqueta (lista de leitura do frontend). 404 se não existir. */
+    public CopyLookup lookup(String code) {
+        String value = code == null ? "" : code.trim();
+        if (value.isEmpty()) {
+            throw new ResourceNotFoundException("Informe o código da etiqueta.");
+        }
+        return copyQueryRepository.findByCode(value)
+                .orElseThrow(() -> new ResourceNotFoundException("Exemplar não encontrado: " + value));
     }
 
     public List<CopyModel> findAllByBook(String isbn) {
@@ -111,7 +126,7 @@ public class CopyService {
                 .map(c ->{
                     BookModel book = books.get(c.getIsbn());
                     return  new CopyLabel(c.getCopyId(),c.getCopy_custom_code(),
-                            book.getTitle(),book.getAuthor(),c.getDepartCode(),c.getLocalCode());
+                            book.getTitle(),book.getAuthor(),c.getDepartCode(),c.getLocalCode(),c.getCopy_index());
                 })
                 .toList();
     }
