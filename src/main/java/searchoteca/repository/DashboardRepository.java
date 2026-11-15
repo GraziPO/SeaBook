@@ -24,8 +24,11 @@ public class DashboardRepository {
         this.jdbc = jdbc;
     }
 
-    /** Cards do topo. :dias define o período das métricas "no período". */
-    public DashboardKpis kpis(int days) {
+    /**
+     * Cards do topo. :dias define o período das métricas "no período";
+     * :inatividade vem da configuração do root (dias sem movimentação até desativar o aluno).
+     */
+    public DashboardKpis kpis(int days, int inactivityDays) {
         String sql = """
             SELECT
               (SELECT count(*) FROM org_loans WHERE status = 'OPEN')                              AS abertos,
@@ -36,7 +39,7 @@ public class DashboardRepository {
               (SELECT count(*) FROM org_students s
                  JOIN org_users u ON u.user_id = s.user_id
                 WHERE u.status
-                  AND (s.last_activity IS NULL OR s.last_activity < CURRENT_DATE - 80))           AS alunos_inativos,
+                  AND (s.last_activity IS NULL OR s.last_activity < CURRENT_DATE - CAST(:inatividade AS int))) AS alunos_inativos,
               (SELECT count(*) FROM org_copies WHERE status = 'AVAILABLE')                        AS disponiveis,
               (SELECT count(*) FROM org_copies)                                                   AS total_exemplares,
               (SELECT count(*) FROM org_users WHERE must_change_password)                         AS primeiro_acesso,
@@ -54,7 +57,7 @@ public class DashboardRepository {
                 WHERE created_at >= date_trunc('month', CURRENT_DATE))                            AS comprovantes_mes
             """;
 
-        return jdbc.queryForObject(sql, Map.of("dias", days), (rs, i) -> new DashboardKpis(
+        return jdbc.queryForObject(sql, Map.of("dias", days, "inatividade", inactivityDays), (rs, i) -> new DashboardKpis(
                 rs.getLong("abertos"),
                 rs.getLong("atrasados"),
                 rs.getLong("alunos_ativos"),

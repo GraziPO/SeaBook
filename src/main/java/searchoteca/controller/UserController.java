@@ -35,9 +35,11 @@ public class UserController {
 
     @PreAuthorize("hasAuthority('users:view')")
     @GetMapping
-    public ResponseEntity<?> findAll(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
-        auditLogService.record(AuditAction.ACCESS, "listagem de usuários (página " + page + ")");
-        return ResponseEntity.ok(userService.findPage(page, size));
+    public ResponseEntity<?> findAll(@RequestParam(defaultValue = "operadores") String tipo,
+                                     @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        boolean students = "alunos".equalsIgnoreCase(tipo);
+        auditLogService.record(AuditAction.ACCESS, "listagem de " + (students ? "alunos" : "operadores") + " (página " + page + ")");
+        return ResponseEntity.ok(userService.findPage(students, page, size));
     }
 
     @PreAuthorize("hasAuthority('users:view')")
