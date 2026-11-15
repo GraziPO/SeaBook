@@ -5,8 +5,8 @@ import org.springframework.transaction.annotation.Transactional;
 import searchoteca.DTO.dashboard.DashboardResponse;
 import searchoteca.auditTrail.AuditLogRepository;
 import searchoteca.repository.DashboardRepository;
+import searchoteca.service.settings.SettingsService;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Service
@@ -19,11 +19,14 @@ public class DashboardService {
 
     private final DashboardRepository dashboardRepository;
     private final AuditLogRepository auditLogRepository;
+    private final SettingsService settingsService;
 
     public DashboardService(DashboardRepository dashboardRepository,
-                            AuditLogRepository auditLogRepository) {
+                            AuditLogRepository auditLogRepository,
+                            SettingsService settingsService) {
         this.dashboardRepository = dashboardRepository;
         this.auditLogRepository = auditLogRepository;
+        this.settingsService = settingsService;
     }
 
     /**
@@ -36,8 +39,8 @@ public class DashboardService {
 
         return new DashboardResponse(
                 period,
-                LocalDate.now(),
-                dashboardRepository.kpis(period),
+                LocalDateTime.now(),
+                dashboardRepository.kpis(period, settingsService.inactivityDays()),
                 dashboardRepository.diary(period),
                 dashboardRepository.copiesByStatus(),
                 dashboardRepository.departmentOccupation(),

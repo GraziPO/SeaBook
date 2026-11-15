@@ -5,6 +5,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import searchoteca.DTO.archive.BatchMoveRequest;
 import searchoteca.DTO.archive.CopyLabel;
+import searchoteca.DTO.archive.CopyLookup;
 import searchoteca.DTO.archive.CopyRequest;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
@@ -30,6 +31,16 @@ public class CopyController {
         auditLogService.record(AuditAction.CREATE,
                 request.quantity() + " exemplar(es) do ISBN " + request.isbn() + " em " + request.localCode());
         return ResponseEntity.ok(labels);
+    }
+
+    /**
+     * Exemplar pelo código da etiqueta, com o livro e a situação. Usado pela lista de leitura
+     * do frontend (baixa, venda, empréstimo, devolução, movimentação, reimpressão).
+     */
+    @PreAuthorize("hasAnyAuthority('copies:view', 'loans:create', 'loans:return', 'exits:create')")
+    @GetMapping("/codigo/{codigo}")
+    public ResponseEntity<CopyLookup> lookup(@PathVariable String codigo) {
+        return ResponseEntity.ok(copyService.lookup(codigo));
     }
 
     //rotas específicas pra impressão de etiquetas

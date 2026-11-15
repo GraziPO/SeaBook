@@ -3,7 +3,8 @@ package searchoteca.service.users;
 import org.springframework.data.domain.Sort;
 import searchoteca.DTO.archive.publicSearch.PageResponse;
 import searchoteca.components.Paging;
-import searchoteca.DTO.users.UserResponse;
+import searchoteca.DTO.users.UserRow;
+import searchoteca.repository.users.UserQueryRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -42,6 +43,7 @@ public class UserService {
     private final AuditLogService auditLogService;
     private final StudentRepository studentRepository;
     private final WaitlistService waitlistService;
+    private final UserQueryRepository userQueryRepository;
 
     public UserService(UserRepository userRepository,
                        RoleRepository roleRepository,
@@ -50,11 +52,13 @@ public class UserService {
                        AccountLifecycleRepository lifecycleRepository,
                        AuditLogService auditLogService,
                        StudentRepository studentRepository,
-                       WaitlistService waitlistService) {
+                       WaitlistService waitlistService,
+                       UserQueryRepository userQueryRepository) {
         this.lifecycleRepository = lifecycleRepository;
         this.auditLogService = auditLogService;
         this.studentRepository = studentRepository;
         this.waitlistService = waitlistService;
+        this.userQueryRepository = userQueryRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -85,10 +89,9 @@ public class UserService {
         return (List<UserModel>)userRepository.findAll();
     }
 
-    /** Listagem paginada, em ordem de username (RNF06). Devolve UserResponse: o hash da senha nunca sai. */
-    public PageResponse<UserResponse> findPage(int page, int size){
-        return PageResponse.from(userRepository.findAll(Paging.of(page, size, Sort.by("username")))
-                .map(UserResponse::from));
+    /** Lista paginada em ordem de username, separada em operadores e alunos (abas da tela). */
+    public PageResponse<UserRow> findPage(boolean students, int page, int size){
+        return userQueryRepository.search(students, Paging.of(page, size, Sort.unsorted()));
     }
 
     public UserModel findByUsername(String username){
