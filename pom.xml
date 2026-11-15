@@ -42,6 +42,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!-- /actuator/health: o Railway usa para saber se a versão nova subiu antes de trocar -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
@@ -98,7 +103,8 @@
 		<dependency>
 			<groupId>com.resend</groupId>
 			<artifactId>resend-java</artifactId>
-			<version>LATEST</version>
+			<!-- versão fixa: com LATEST o build mudava sozinho quando saía versão nova -->
+			<version>4.30.0</version>
 		</dependency>
 	</dependencies>
 

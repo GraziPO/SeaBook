@@ -55,6 +55,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/legal/**", "/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
+                        // health check do Railway: só responde UP/DOWN, sem detalhes (management.endpoint.health.show-details=never)
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .authenticationProvider(authenticationProvider())

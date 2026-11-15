@@ -1,0 +1,27 @@
+# PostgreSQL local para desenvolvimento (opcional: use se não quiser instalar o Postgres na máquina).
+#   subir:   docker compose up -d
+#   parar:   docker compose down        (os dados ficam no volume)
+#   zerar:   docker compose down -v     (apaga o banco)
+# No .env:   DB_URL=jdbc:postgresql://localhost:5432/searchoteca   DB_USER=searchoteca   DB_PASSWORD=<a mesma de baixo>
+services:
+  postgres:
+    image: postgres:16
+    container_name: searchoteca-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: searchoteca
+      POSTGRES_USER: searchoteca
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-searchoteca_local}
+      TZ: America/Sao_Paulo
+    ports:
+      - "5432:5432"
+    volumes:
+      - searchoteca-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U searchoteca -d searchoteca"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  searchoteca-pgdata:

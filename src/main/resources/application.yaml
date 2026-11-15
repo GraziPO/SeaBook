@@ -1,8 +1,21 @@
+# =====================================================================
+# Valores sensíveis e os que mudam por ambiente vêm de variáveis de ambiente:
+#   - na sua máquina: arquivo .env na raiz do projeto (fora do Git)
+#   - no Railway: aba Variables do serviço
+#   - no GitHub Actions: o próprio workflow (.github/workflows/ci.yml)
+# =====================================================================
+server:
+  # o Railway informa a porta na variável PORT; na sua máquina continua 8080
+  port: ${PORT:8080}
+  # atrás do proxy do Railway: usa o IP e o https reais do cliente (X-Forwarded-*)
+  forward-headers-strategy: native
+
 spring:
   application:
     name: v0
   config:
-    import: "optional:file:.env[.proprieties]"
+    # o .env é opcional: no Railway ele não existe e as variáveis vêm do painel
+    import: "optional:file:.env[.properties]"
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
@@ -71,13 +84,15 @@ resend:
 logging:
   level:
     root: INFO
-    searchoteca: DEBUG
+    searchoteca: ${LOG_LEVEL_APP:DEBUG}   # no Railway: INFO (DEBUG mostra detalhe demais em produção)
     AUDIT: INFO
     org.springframework.security: WARN
   pattern:
     level: "%5p [req=%X{requestId:-}] [user=%X{user:-}]"
   file:
-    name: logs/searchoteca.log
+    # Railway: deixe LOG_FILE sem definir -> só console (o painel guarda os logs; o disco é apagado a cada deploy)
+    # sua máquina: LOG_FILE=logs/searchoteca.log no .env
+    name: ${LOG_FILE:}
   logback:
     rollingpolicy:
       max-file-size: 10MB
@@ -86,3 +101,16 @@ logging:
   structured:
     format:
       file: ecs
+
+# ===== Monitoramento (health check do Railway) =====
+# Só o /actuator/health fica exposto, e sem detalhes: responde {"status":"UP"} ou DOWN (inclui o banco).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
