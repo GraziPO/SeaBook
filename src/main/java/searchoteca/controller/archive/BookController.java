@@ -1,0 +1,89 @@
+package searchoteca.controller.archive;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+import searchoteca.auditTrail.AuditAction;
+import searchoteca.auditTrail.AuditLogService;
+import searchoteca.model.Books.BookModel;
+import searchoteca.service.catalog.BookService;
+import searchoteca.service.catalog.CopyService;
+import searchoteca.service.catalog.IsbnLookupService;
+
+@RestController
+@RequestMapping("/api/livro")
+public class BookController {
+
+    private final BookService bookService;
+    private final CopyService copyService;
+    private final AuditLogService auditLogService;
+    private final IsbnLookupService isbnLookupService;
+
+    public BookController(BookService bookService, CopyService copyService, AuditLogService auditLogService,
+                          IsbnLookupService isbnLookupService) {
+        this.bookService=bookService;
+        this.copyService=copyService;
+        this.auditLogService=auditLogService;
+        this.isbnLookupService=isbnLookupService;
+    }
+
+    /**
+     * Preenche o cadastro pelo ISBN, buscando na Open Library (RF05). Não salva nada:
+     * o operador confere os dados e depois envia o POST /api/livro.
+     *   200 dados encontrados | 404 ISBN não encontrado | 409 ISBN inválido ou já cadastrado
+     *   503 Open Library fora do ar (o cadastro continua manual)
+     */
+    @PreAuthorize("hasAuthority('org_books:create')")
+    @GetMapping("/consulta/{isbn}")
+    public ResponseEntity<?> lookupIsbn(@PathVariable String isbn){
+        return ResponseEntity.ok(isbnLookupService.lookup(isbn));
+    }
+
+    @PreAuthorize("hasAuthority('org_books:view')")
+    @GetMapping
+    public ResponseEntity<?> getAll(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size){
+        auditLogService.record(AuditAction.ACCESS, "listagem de livros (página " + page + ")");
+        return ResponseEntity.ok(bookService.findPage(page, size));
+    }
+
+    @PreAuthorize("hasAuthority('org_books:view')")
+    @GetMapping("/{isbn}")
+    public ResponseEntity<?> getByIsbn(@PathVariable String isbn){
+        BookModel book = bookService.findByIsbn(isbn);
+        if (book == null){
+            return ResponseEntity.notFound().build();
+        }
+        auditLogService.record(AuditAction.ACCESS,"org_books" + isbn);
+        return ResponseEntity.ok(book);
+    }
+
+    @PreAuthorize("hasAuthority('org_books:create')")
+    @PostMapping
+    public ResponseEntity<?> create(@RequestBody BookModel Book){
+        BookModel created = bookService.create(Book);
+        auditLogService.record(AuditAction.CREATE, "livro " + created.getIsbn());
+        return ResponseEntity.ok(created);
+    }
+
+    @PreAuthorize("hasAuthority('org_books:edit')")
+    @PutMapping("/{isbn}")
+    public ResponseEntity<?> update(@PathVariable String isbn, @RequestBody BookModel bookInfo){
+        // o registro (com o antes -> depois) é feito no BookService
+        return ResponseEntity.ok(bookService.update(isbn, bookInfo));
+    }
+
+    @PreAuthorize("hasAuthority('org_books:delete')")
+    @DeleteMapping("/{isbn}")
+    public ResponseEntity<?> delete(@PathVariable String isbn) {
+        bookService.delete(isbn);
+        auditLogService.record(AuditAction.DELETE, "livro " + isbn);
+        return ResponseEntity.noContent().build();
+    }
+
+    //rota de alteração de preço
+    @PreAuthorize("hasAuthority('org_books:edit_price')")
+    @PostMapping("/{isbn}/preco")
+    public ResponseEntity<?> updatePrice(@PathVariable String isbn, @RequestBody PriceRequest request){
+        return ResponseEntity.ok(bookService.updatePrice(isbn, request.salePrice()));
+    }
+}

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS org_books(
     genre VARCHAR(50)
 );
 
+ALTER TABLE org_books ADD COLUMN IF NOT EXISTS sale_price NUMERIC(10,2);
+
 CREATE TABLE IF NOT EXISTS org_copies(
     copy_id SERIAL PRIMARY KEY,
     isbn VARCHAR(25) REFERENCES org_books(isbn),
@@ -31,9 +33,11 @@ CREATE TABLE IF NOT EXISTS org_copies(
     local_code  VARCHAR REFERENCES org_local(local_code),
     copy_index INT NOT NULL,
     copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || depart_code || local_code || copy_index :: text) STORED,
-    status VARCHAR(20) DEFAULT 'DISPONÍVEL',
+    status VARCHAR(20) DEFAULT 'AVAILABLE',
     UNIQUE (isbn,copy_index)
 );
+
+CREATE INDEX IF NOT EXISTS idx_copies_isbn ON org_copies(isbn);
 
 CREATE TABLE IF NOT EXISTS sys_roles(
     role_id SERIAL PRIMARY KEY,
@@ -50,8 +54,11 @@ CREATE TABLE IF NOT EXISTS org_users(
     email VARCHAR(40) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     role_code VARCHAR(30) REFERENCES sys_roles(role_code),
-    status BOOLEAN NOT NULL DEFAULT TRUE
+    status BOOLEAN NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN NOT NULL DEFAULT FALSE
     );
+
+ALTER TABLE org_users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP;
 
 CREATE TABLE IF NOT EXISTS sys_permissions(
     permission_id SERIAL PRIMARY KEY,
@@ -60,6 +67,8 @@ CREATE TABLE IF NOT EXISTS sys_permissions(
     action VARCHAR(30) NOT NULL,                  -- ex: 'create', 'view', 'alter_quantity'
     description VARCHAR(100)
     );
+
+-- ================================ Seguranca e LGPD ===========================
 
 CREATE TABLE IF NOT EXISTS sys_role_permissions(
     role_code VARCHAR(20) NOT NULL REFERENCES sys_roles(role_code) ON DELETE CASCADE,
@@ -75,7 +84,6 @@ CREATE TABLE IF NOT EXISTS auditTrail_logs(
     details TEXT
     );
 
-
 CREATE TABLE IF NOT EXISTS sys_mfa(
     id BIGSERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES org_users(user_id) ON DELETE CASCADE,
@@ -86,7 +94,18 @@ CREATE TABLE IF NOT EXISTS sys_mfa(
     used_at TIMESTAMP                       -- preenchido quando usado ou invalidado
 );
 
-CREATE INDEX IF NOT EXISTS idx_mfa_user_created ON sys_mfa(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mfa_user_created
+    ON sys_mfa(user_id, created_at DESC);
+
+-- Aceite dos Termos de Uso e da Política de Privacidade (uma linha por versão aceita)
+CREATE TABLE IF NOT EXISTS sys_terms_acceptance(
+    id BIGSERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES org_users(user_id) ON DELETE CASCADE,
+    terms_version VARCHAR(20) NOT NULL,
+    privacy_version VARCHAR(20) NOT NULL,
+    accepted_at TIMESTAMP NOT NULL,
+    UNIQUE (user_id, terms_version, privacy_version)
+);
 
 CREATE TABLE IF NOT EXISTS sys_password_reset(
     id BIGSERIAL PRIMARY KEY,
@@ -100,13 +119,116 @@ CREATE TABLE IF NOT EXISTS sys_password_reset(
 
 CREATE INDEX IF NOT EXISTS idx_reset_user_created
     ON sys_password_reset(user_id, created_at DESC);
+-- ============================================== alunos =====================================================
 
--- Aceite dos Termos de Uso e da Política de Privacidade (uma linha por versão aceita)
-CREATE TABLE IF NOT EXISTS sys_terms_acceptance(
-    id BIGSERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES org_users(user_id) ON DELETE CASCADE,
-    terms_version VARCHAR(20) NOT NULL,
-    privacy_version VARCHAR(20) NOT NULL,
-    accepted_at TIMESTAMP NOT NULL,
-    UNIQUE (user_id, terms_version, privacy_version)
+-- ============================================== configurações (root) =====================================================
+-- Só aparecem aqui as configurações já alteradas; as demais usam o padrão do SettingsService.
+CREATE TABLE IF NOT EXISTS sys_settings(
+    setting_key   VARCHAR(60) PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at    TIMESTAMP NOT NULL,
+    updated_by    INT REFERENCES org_users(user_id)
 );
+
+CREATE TABLE IF NOT EXISTS org_students(
+    student_id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE REFERENCES org_users(user_id),
+    ra VARCHAR(30) UNIQUE,
+    phone VARCHAR(20),
+    last_activity DATE
+);
+-- ============================================== empréstimos =====================================================
+CREATE TABLE IF NOT EXISTS org_loans(
+
+    loan_id SERIAL PRIMARY KEY,
+    student_id INT NOT NULL REFERENCES org_students(student_id),
+    operator_id INT NOT NULL REFERENCES org_users(user_id),
+    loan_date TIMESTAMP NOT NULL,
+    due_date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'OPEN'
+);
+
+CREATE TABLE IF NOT EXISTS org_loan_items(
+    item_id SERIAL PRIMARY KEY,
+    loan_id INT NOT NULL REFERENCES org_loans(loan_id),
+    copy_id INT NOT NULL REFERENCES org_copies(copy_id),
+    returned_at TIMESTAMP,
+    returned_to INT REFERENCES org_users(user_id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS copy_per_loan
+    ON org_loan_items(copy_id) WHERE returned_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS loans_student ON org_loans(student_id);
+CREATE INDEX IF NOT EXISTS loans_open ON org_loans(due_date) WHERE status = 'OPEN';
+
+CREATE SEQUENCE IF NOT EXISTS receipt_seq;
+
+CREATE TABLE IF NOT EXISTS org_receipts(
+receipt_id BIGINT PRIMARY KEY,
+    receipt_code VARCHAR(30) NOT NULL UNIQUE,
+    exit_type VARCHAR(20) NOT NULL,
+    operator_id INT NOT NULL REFERENCES org_users(user_id),
+    loan_id INT REFERENCES org_loans(loan_id),
+    total NUMERIC(10,2),
+    created_at TIMESTAMP NOT NULL,
+    snapshot JSONB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_receipt_items(
+    receipt_id BIGINT NOT NULL REFERENCES org_receipts(receipt_id),
+    copy_id INT NOT NULL REFERENCES org_copies(copy_id),
+    unit_price NUMERIC(10,2),
+    PRIMARY KEY (receipt_id, copy_id)
+);
+
+CREATE TABLE IF NOT EXISTS org_waitlist(
+    waitlist_id SERIAL PRIMARY KEY,
+    isbn VARCHAR(15) NOT NULL REFERENCES org_books(isbn),
+    student_id INT NOT NULL REFERENCES org_students(student_id),
+    status VARCHAR(20) NOT NULL DEFAULT 'WAITING',
+    created_at TIMESTAMP NOT NULL,      -- ordem de chegada
+    copy_id INT REFERENCES org_copies(copy_id),  -- exemplar reservado (quando NOTIFIED)
+    notified_at TIMESTAMP,
+    expires_at TIMESTAMP,
+    closed_at TIMESTAMP
+    );
+
+-- o mesmo aluno não entra duas vezes na fila do mesmo título
+CREATE UNIQUE INDEX IF NOT EXISTS waitlist_one_active_per_student
+    ON org_waitlist(isbn, student_id) WHERE status IN ('WAITING', 'NOTIFIED');
+
+-- um exemplar só pode estar reservado para uma pessoa
+CREATE UNIQUE INDEX IF NOT EXISTS waitlist_one_active_per_copy
+    ON org_waitlist(copy_id) WHERE status = 'NOTIFIED';
+
+CREATE INDEX IF NOT EXISTS waitlist_queue   ON org_waitlist(isbn, status, created_at);
+CREATE INDEX IF NOT EXISTS waitlist_expires ON org_waitlist(expires_at) WHERE status = 'NOTIFIED';
+
+CREATE TABLE IF NOT EXISTS sys_login_attempts(
+    username VARCHAR(30) PRIMARY KEY,
+    failed_attempts INT NOT NULL DEFAULT 0,
+    last_failure_at TIMESTAMP NOT NULL,
+    locked_until TIMESTAMP
+);
+
+ALTER TABLE org_students ADD COLUMN IF NOT EXISTS deactivated_at      TIMESTAMP;
+ALTER TABLE org_students ADD COLUMN IF NOT EXISTS deactivation_reason VARCHAR(20);  -- INACTIVITY | ADMIN | REQUEST
+ALTER TABLE org_students ADD COLUMN IF NOT EXISTS anonymized_at       TIMESTAMP;
+
+-- Pedidos do aluno para desativar ou reativar a conta. Só o root decide.
+CREATE TABLE IF NOT EXISTS sys_account_requests(
+                                                   request_id    SERIAL PRIMARY KEY,
+                                                   user_id       INT NOT NULL REFERENCES org_users(user_id),
+    type          VARCHAR(20) NOT NULL,                    -- DEACTIVATE | REACTIVATE
+    status        VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING | APPROVED | REJECTED | CANCELLED
+    reason        VARCHAR(255),                            -- texto do aluno (apagado na anonimização)
+    created_at    TIMESTAMP NOT NULL,
+    decided_at    TIMESTAMP,
+    decided_by    INT REFERENCES org_users(user_id),
+    decision_note VARCHAR(255)
+    );
+
+-- no máximo um pedido em aberto por usuário
+CREATE UNIQUE INDEX IF NOT EXISTS account_request_one_pending
+    ON sys_account_requests(user_id) WHERE status = 'PENDING';

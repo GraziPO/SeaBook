@@ -1,0 +1,108 @@
+# =====================================================================
+# CI do backend Searchoteca.
+#   build  -> compila e gera o .jar (sem testes). Se falhar, o Railway NÃO faz o deploy.
+#   testes -> roda a suíte num PostgreSQL 16 de verdade (mesmo schema.sql/permissions.sql do sistema).
+#
+# Railway com "Wait for CI" ligado: o deploy espera este workflow terminar e é pulado se ele falhar.
+# Enquanto os testes estão sendo atualizados, eles NÃO barram o deploy (continue-on-error).
+# Quando a suíte estiver passando, crie a variável do repositório TESTS_BLOCK_DEPLOY = true
+# (GitHub > Settings > Secrets and variables > Actions > Variables) e a partir daí teste falhando barra o deploy.
+# =====================================================================
+name: CI
+
+on:
+  push:
+    branches: [main, Development]
+  pull_request:
+    branches: [main, Development]
+
+# um push novo no mesmo branch cancela a execução antiga, que já ficou velha
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compilar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Preparar o Maven Wrapper
+        run: sed -i 's/\r$//' mvnw && chmod +x mvnw
+
+      # maven.test.skip: nem compila os testes (eles ficam no job seguinte)
+      - name: Compilar e empacotar
+        run: ./mvnw -B -ntp -Dmaven.test.skip=true package
+
+  testes:
+    name: Testes (PostgreSQL)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: ${{ vars.TESTS_BLOCK_DEPLOY != 'true' }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: searchoteca_test
+          POSTGRES_USER: searchoteca
+          POSTGRES_PASSWORD: searchoteca
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U searchoteca -d searchoteca_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Variáveis de ambiente valem mais que o application-test.properties:
+    # a suíte usa este Postgres e os scripts reais do sistema, em vez do H2.
+    # Nada aqui é segredo de produção: o banco existe só durante este job.
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/searchoteca_test
+      SPRING_DATASOURCE_USERNAME: searchoteca
+      SPRING_DATASOURCE_PASSWORD: searchoteca
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_SQL_INIT_MODE: always
+      SPRING_SQL_INIT_SCHEMA_LOCATIONS: classpath:schema.sql
+      SPRING_SQL_INIT_DATA_LOCATIONS: classpath:permissions.sql,classpath:auditTrail.sql
+      TZ: America/Sao_Paulo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Preparar o Maven Wrapper
+        run: sed -i 's/\r$//' mvnw && chmod +x mvnw
+
+      - name: Rodar os testes
+        run: ./mvnw -B -ntp verify
+
+      # relatório de cada teste, para baixar na página da execução (aba Summary > Artifacts)
+      - name: Guardar relatórios dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-testes
+          path: |
+            target/surefire-reports/
+            target/test-logs/
+          if-no-files-found: ignore
+          retention-days: 7

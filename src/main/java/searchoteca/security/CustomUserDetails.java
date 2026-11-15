@@ -25,7 +25,7 @@ public class CustomUserDetails implements UserDetails{
     }
 
     public Long getUserId(){
-        return user.getId();
+        return user.getUserId();
     }
     public String getRoleCode(){
         return user.getRole_code();
@@ -33,9 +33,16 @@ public class CustomUserDetails implements UserDetails{
     public String getEmail(){
         return user.getEmail();
     }
-
     public String getCompleteName(){
         return user.getCompleteName();
+    }
+    /** Última troca de senha (pode ser null em contas antigas). */
+    public java.time.LocalDateTime getPasswordChangedAt(){
+        return user.getPasswordChangedAt();
+    }
+
+    public Boolean mustChangePassword(){
+        return Boolean.TRUE.equals(user.getMust_change_password());
     }
 
     @Override

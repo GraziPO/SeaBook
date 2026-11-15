@@ -9,6 +9,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Date;
 
 @Service
@@ -17,22 +19,27 @@ public class JWTService {
     private static final String STAGE_CLAIM = "stage";
     private static final String STAGE_MFA_PENDING = "MFA_PENDING";
     private static final String STAGE_TERMS_PENDING = "TERMS_PENDING";
+    private static final String STAGE_PASSWORD_CHANGE = "PASSWORD_CHANGE_PENDING";
 
     private final SecretKey secret;
     private final long TokenTTl;
     private final long mfaTokenTtl;
     private final long termsTokenTtl;
+    private final long passwordChangeTokenTtl;
+
 
     public JWTService(
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.expiration-ms:3600000}") long expirationMs,
             @Value("${mfa.token-ttl-ms:900000}") long mfaTokenTtlMs,
-            @Value("${legal.token-ttl-ms:900000}") long termsTokenTtlMs){
+            @Value("${legal.token-ttl-ms:900000}") long termsTokenTtlMs,
+            @Value("${password-change.token-ttl-ms:900000}") long passwordChangeTokenTtlMs){
 
         this.secret = Keys.hmacShaKeyFor(secret.getBytes());
         this.TokenTTl = expirationMs;
         this.mfaTokenTtl = mfaTokenTtlMs;
         this.termsTokenTtl = termsTokenTtlMs;
+        this.passwordChangeTokenTtl = passwordChangeTokenTtlMs;
     }
 
     public String generateToken(CustomUserDetails userDetails) {
@@ -98,7 +105,22 @@ public class JWTService {
         Claims claims = parseClaims(token);
         return claims.getSubject().equals(userDetails.getUsername())
                 && !claims.getExpiration().before(new Date())
-                && claims.get(STAGE_CLAIM) == null;   // recusa o mfaToken nas rotas protegidas
+                && claims.get(STAGE_CLAIM) == null   // recusa o mfaToken nas rotas protegidas
+                && !issuedBeforePasswordChange(claims, userDetails.getPasswordChangedAt());
+    }
+
+    /**
+     * RF18: o token foi emitido antes da última troca de senha? Então não vale mais.
+     * O "iat" do JWT guarda só segundos inteiros, por isso a troca também é comparada em segundos:
+     * o token novo, gerado logo depois da troca (no mesmo segundo), continua válido.
+     */
+    private boolean issuedBeforePasswordChange(Claims claims, LocalDateTime passwordChangedAt) {
+        if (passwordChangedAt == null || claims.getIssuedAt() == null) {
+            return false;   // conta que nunca trocou a senha
+        }
+        long issuedAt = claims.getIssuedAt().toInstant().getEpochSecond();
+        long changedAt = passwordChangedAt.atZone(ZoneId.systemDefault()).toEpochSecond();
+        return issuedAt < changedAt;
     }
 
     public boolean isTokenExpired(String token){
@@ -110,5 +132,36 @@ public class JWTService {
                 .verifyWith(secret)
                 .build()
                 .parseSignedClaims(token).getPayload();
+    }
+
+
+    // Teste de metodo generico (evitar repetir código)
+    private String generateStageToken(CustomUserDetails user, String stage, long ttlMs) {
+        Date now = new Date();
+
+        return Jwts.builder()
+                .subject(user.getUsername())
+                .claim(STAGE_CLAIM, stage)
+                .issuedAt(now)
+                .expiration(new Date(now.getTime() + ttlMs))
+                .signWith(secret)
+                .compact();
+    }
+
+    private String extractStageUsername(String token, String stage){
+        Claims claims = parseClaims(token);
+        if(!stage.equals(claims.get(STAGE_CLAIM, String.class))) {
+            throw new JwtException("Token não pertencente a essa atapa");
+        }
+
+        return claims.getSubject();
+    }
+
+    public String generatePasswordChangeToken(CustomUserDetails user) {
+        return generateStageToken(user, STAGE_PASSWORD_CHANGE, passwordChangeTokenTtl);
+    }
+
+    public String extractPasswordChangeToken(String token) {
+        return extractStageUsername(token, STAGE_PASSWORD_CHANGE);
     }
 }

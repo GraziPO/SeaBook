@@ -2,63 +2,104 @@ package searchoteca.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import searchoteca.DTO.ChangePasswordRequest;
+import searchoteca.DTO.users.UserResponse;
+import searchoteca.DTO.users.student.StudentRequest;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.model.UserModel;
-import searchoteca.service.UserService;
+import searchoteca.resetPassword.PasswordChangeService;
+import searchoteca.security.CustomUserDetails;
+import searchoteca.service.users.StudentService;
+import searchoteca.service.users.UserService;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/usuarios")
 public class UserController {
     private final UserService userService;
+    private final StudentService studentService;
     private final AuditLogService auditLogService;
+    private final PasswordChangeService passwordChangeService;
 
-    public UserController(UserService userService,  AuditLogService auditLogService) {
+    public UserController(UserService userService, AuditLogService auditLogService, StudentService studentService, PasswordChangeService passwordChangeService) {
         this.userService = userService;
         this.auditLogService = auditLogService;
+        this.studentService = studentService;
+        this.passwordChangeService = passwordChangeService;
     }
 
+    @PreAuthorize("hasAuthority('users:view')")
     @GetMapping
-    public ResponseEntity<?> findAll() {
-        auditLogService.record(AuditAction.ACCESS,"All Users");
-        return ResponseEntity.ok(userService.findAll());
+    public ResponseEntity<?> findAll(@RequestParam(defaultValue = "operadores") String tipo,
+                                     @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        boolean students = "alunos".equalsIgnoreCase(tipo);
+        auditLogService.record(AuditAction.ACCESS, "listagem de " + (students ? "alunos" : "operadores") + " (página " + page + ")");
+        return ResponseEntity.ok(userService.findPage(students, page, size));
     }
 
+    @PreAuthorize("hasAuthority('users:view')")
     @GetMapping("/{username}")
     public ResponseEntity<?> findById(@PathVariable String username) {
-        auditLogService.record(AuditAction.ACCESS,"users" + username);
         UserModel user = userService.findByUsername(username);
-
-        return ResponseEntity.ok(user);
+        auditLogService.record(AuditAction.ACCESS, "users" + username);
+        return ResponseEntity.ok(UserResponse.from(user));
     }
+
     @PreAuthorize("hasAuthority('users:create')")
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody UserModel user){
-        auditLogService.record(AuditAction.CREATE,"users" + user.getUsername());
-        return ResponseEntity.ok(userService.create(user));
+    public ResponseEntity<?> create(@RequestBody UserModel user) {
+        UserModel created = userService.create(user);
+        auditLogService.record(AuditAction.CREATE, "usuário " + created.getUsername() + " (perfil " + created.getRole_code() + ")");
+        return ResponseEntity.ok(created);
     }
 
     @PreAuthorize("hasAuthority('users:edit')")
     @PutMapping("/{username}")
-    public ResponseEntity<?> update(@PathVariable String username, @RequestBody UserModel userInfo){
-        auditLogService.record(AuditAction.UPDATE,"users" + username);
+    public ResponseEntity<?> update(@PathVariable String username, @RequestBody UserModel userInfo) {
+        // o registro (com o antes -> depois) é feito no UserService
         return ResponseEntity.ok(userService.update(username, userInfo));
     }
 
+    //======================= cria usuários do tipo "aluno" =======================
+
+    @PreAuthorize("hasAuthority('students:create')")
+    @PostMapping("/aluno")
+    public ResponseEntity<?> createStudent(@RequestBody StudentRequest studentInfo) {
+        studentService.create(studentInfo);
+        auditLogService.record(AuditAction.CREATE, "aluno RA " + studentInfo.ra());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/me/senha")
+    public ResponseEntity<?> changePassword(@RequestBody ChangePasswordRequest request, Authentication auth) {
+        CustomUserDetails user = (CustomUserDetails) auth.getPrincipal();
+        passwordChangeService.changeOwnPassword(user.getUserId(), request.currentPassword(), request.newPassword());
+        // RF18: o token usado nesta requisição já não vale; o frontend manda para o login
+        return ResponseEntity.ok(Map.of(
+                "message", "Senha alterada. Entre novamente com a nova senha.",
+                "reloginRequired", true));
+    }
+
+    // ---------------- ROTAS DE ATIVAÇÃO / DESATICACAO -------------------
+
     @PreAuthorize("hasAuthority('users:edit')")
     @PatchMapping("/{username}/status/ativar")
-    public ResponseEntity<?> activate (@PathVariable String username){
+    public ResponseEntity<?> activate(@PathVariable String username) {
         userService.activate(username);
-        auditLogService.record(AuditAction.ACTIVATE_USER,"users" + username);
+        auditLogService.record(AuditAction.ACTIVATE_USER, "usuário " + username);
         return ResponseEntity.ok().build();
     }
 
     @PreAuthorize("hasAuthority('users:edit')")
     @PatchMapping("/{username}/status/desativar")
-    public ResponseEntity<?> deactivate (@PathVariable String username){
+    public ResponseEntity<?> deactivate(@PathVariable String username) {
         userService.deactivate(username);
-        auditLogService.record(AuditAction.DEACTIVATE_USER,"users" + username);
+        auditLogService.record(AuditAction.DEACTIVATE_USER, "usuário " + username);
         return ResponseEntity.ok().build();
     }
 }

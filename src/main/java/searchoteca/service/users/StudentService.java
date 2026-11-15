@@ -4,12 +4,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchoteca.DTO.users.student.StudentRequest;
+import searchoteca.exception.ResourceConflictException;
 import searchoteca.model.StudentModel;
 import searchoteca.model.UserModel;
 import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.users.UserRepository;
-import searchoteca.resetPassword.PasswordPolicy;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Service
@@ -17,13 +18,11 @@ public class StudentService {
     private final StudentRepository studentRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final PasswordPolicy passwordPolicy;
 
-    public StudentService(StudentRepository studentRepository, PasswordEncoder passwordEncoder, UserRepository userRepository, PasswordPolicy passwordPolicy) {
+    public StudentService(StudentRepository studentRepository, PasswordEncoder passwordEncoder, UserRepository userRepository) {
         this.studentRepository = studentRepository;
         this.passwordEncoder = passwordEncoder;
         this.userRepository = userRepository;
-        this.passwordPolicy = passwordPolicy;
     }
 
     @Transactional
@@ -33,9 +32,11 @@ public class StudentService {
         basicUser.setCompleteName(request.completeName());
         basicUser.setEmail(request.email());
 
-        passwordPolicy.validatePassword(request.password());
-        basicUser.setPassword(passwordEncoder.encode(request.password()));
-        
+        if (request.ra() == null || request.ra().isBlank()) {
+            throw new ResourceConflictException("Informe o RA do aluno.");
+        }
+
+        basicUser.setPassword(passwordEncoder.encode(request.ra()));
         basicUser.setRole_code("students");
         basicUser.setStatus(true);
         basicUser.setMust_change_password(true);
@@ -46,7 +47,7 @@ public class StudentService {
         student.setUserId(basicUser.getUserId());
         student.setRa(request.ra());
         student.setPhone(request.phone());
-        student.setLastActivity(LocalDateTime.now());
+        student.setLastActivity(LocalDate.now());
 
         return studentRepository.save(student);
     }

@@ -6,19 +6,22 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import searchoteca.DTO.*;
+import searchoteca.DTO.legal.TermsAcceptRequest;
+import searchoteca.DTO.security.*;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.legal.TermsService;
 import searchoteca.mfa.MFAService;
+import searchoteca.resetPassword.PasswordChangeService;
 import searchoteca.resetPassword.PasswordResetService;
 import searchoteca.security.CustomUserDetails;
 import searchoteca.security.JWTService;
+import searchoteca.security.LoginAttemptService;
 
 import java.util.Map;
 
@@ -39,6 +42,9 @@ public class AuthController {
     private final TermsService termsService;
     private final boolean mfaEnabled;
     private final PasswordResetService passwordResetService;
+    private final PasswordChangeService passwordChangeService;
+    private final long passwordChangeTokenTtl; //tirar essa variavel daqui e manter dentro do metodo depois
+    private final LoginAttemptService loginAttemptService;
 
     public AuthController(AuthenticationManager authenticationManager,
                           JWTService jwtService,
@@ -46,7 +52,10 @@ public class AuthController {
                           MFAService mfaService,
                           TermsService termsService,
                           @Value("${mfa.enabled:true}") boolean mfaEnabled,
-                          PasswordResetService passwordResetService) {
+                          @Value("${password-change.token-ttl-ms}") long passwordChangeTokenTtl,
+                          PasswordResetService passwordResetService,
+                          PasswordChangeService passwordChangeService,
+                          LoginAttemptService loginAttemptService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.auditLogService = auditLogService;
@@ -54,11 +63,17 @@ public class AuthController {
         this.termsService = termsService;
         this.mfaEnabled = mfaEnabled;
         this.passwordResetService = passwordResetService;
+        this.passwordChangeTokenTtl = passwordChangeTokenTtl;
+        this.passwordChangeService = passwordChangeService;
+        this.loginAttemptService = loginAttemptService;
     }
 
     /** Etapa 1: confere usuário e senha. */
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest loginRequest) {
+        // bloqueado recusa antes de conferir a senha (429)
+        loginAttemptService.checkNotLocked(loginRequest.username());
+
         Authentication authentication;
         try {
             authentication = authenticationManager.authenticate(
@@ -66,9 +81,12 @@ public class AuthController {
             );
         } catch (AuthenticationException ex) {
             auditLogService.save(loginRequest.username(), AuditAction.LOGIN_FAILURE, null);
+            loginAttemptService.registerFailure(loginRequest.username()); // na 5ª falha, bloqueia (429)
             throw ex; // GlobalExceptionHandler -> 401
         }
 
+        // senha certa: as falhas anteriores deixam de contar
+        loginAttemptService.registerSuccess(loginRequest.username());
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
 
         // Sem aceite da versão atual: para aqui. Nenhum código de MFA é enviado.
@@ -88,9 +106,9 @@ public class AuthController {
 
     /** Etapa 3: confere o código do e-mail e devolve o JWT de acesso. */
     @PostMapping("/mfa/verify")
-    public ResponseEntity<LoginResponse> verifyMFAToken(@RequestBody MfaVerifyRequest request) {
+    public ResponseEntity<?> verifyMFAToken(@RequestBody MfaVerifyRequest request) {   // antes: <LoginResponse>
         CustomUserDetails userDetails = mfaService.verify(request.mfaToken(), request.code());
-        return ResponseEntity.ok(issueFullToken(userDetails));
+        return ResponseEntity.ok(finishLogin(userDetails));                            // antes: issueFullToken
     }
 
     /** Gera e envia um novo código (o anterior deixa de valer). */
@@ -104,7 +122,7 @@ public class AuthController {
         if (mfaEnabled) {
             return mfaService.startChallenge(userDetails);
         }
-        return issueFullToken(userDetails);
+        return finishLogin(userDetails);          // antes: issueFullToken
     }
 
     private LoginResponse issueFullToken(CustomUserDetails userDetails) {
@@ -125,5 +143,23 @@ public class AuthController {
     public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
         passwordResetService.resetPassword(request.login(),request.code(),request.newPassword());
         return ResponseEntity.noContent().build();
+    }
+
+    //========================== TROCCCA DE SENNHA
+
+    /** Último passo antes do token completo: exige a troca de senha se for o primeiro acesso. */
+    private Object finishLogin(CustomUserDetails userDetails) {
+        if (userDetails.mustChangePassword()) {
+            return new PasswordChangeChallengeResponse(true,
+                    jwtService.generatePasswordChangeToken(userDetails), passwordChangeTokenTtl / 1000);
+        }
+        return issueFullToken(userDetails);
+    }
+
+    @PostMapping("/senha/primeiro-acesso")
+    public ResponseEntity<LoginResponse> firstAccess(@RequestBody FirstAccessRequest request) {
+        CustomUserDetails userDetails = passwordChangeService.completeFirstAccess(
+                request.passwordChangeToken(), request.newPassword());
+        return ResponseEntity.ok(issueFullToken(userDetails));
     }
 }
