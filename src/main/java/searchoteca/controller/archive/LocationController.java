@@ -29,6 +29,18 @@ public class LocationController {
         return ResponseEntity.ok(locationService.findPage(page, size));
     }
 
+    /**
+     * Tela Movimentações: busca de localizações (código, nome ou departamento) com quantos exemplares
+     * estão na estante. GET /api/localizacao/estantes?busca=lit&page=0&size=20
+     */
+    @PreAuthorize("hasAuthority('org_local:view')")
+    @GetMapping("/estantes")
+    public ResponseEntity<?> shelves(@RequestParam(defaultValue = "") String busca,
+                                     @RequestParam(defaultValue = "0") int page,
+                                     @RequestParam(defaultValue = "20") int size){
+        return ResponseEntity.ok(stockService.shelves(busca, page, size));
+    }
+
     @PreAuthorize("hasAuthority('org_local:view')")
     @GetMapping("/{localCode}")
     public ResponseEntity<?> getById(@PathVariable String localCode){
