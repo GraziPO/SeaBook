@@ -100,6 +100,19 @@ logging:
     format:
       file: ecs
 
+# ===== Busca de dados do livro pelo ISBN (cadastro de livro) =====
+# 1º ISBNdb (com chave); se ela não achar ou cair, Open Library (gratuita).
+# Sem ISBNDB_API_KEY, a ISBNdb fica desligada e só a Open Library é usada.
+isbn-lookup:
+  connect-timeout-ms: 3000
+  read-timeout-ms: 5000
+  isbndb:
+    api-key: ${ISBNDB_API_KEY:}
+    # o endereço depende do plano: o painel da ISBNdb mostra o "API host" da sua chave
+    base-url: ${ISBNDB_BASE_URL:https://api2.isbndb.com}
+  open-library:
+    base-url: https://openlibrary.org
+
 # ===== Monitoramento (health check do Railway) =====
 # Só o /actuator/health fica exposto, e sem detalhes: responde {"status":"UP"} ou DOWN (inclui o banco).
 management:

@@ -3,7 +3,7 @@ package searchoteca.DTO.archive;
 /**
  * Dados encontrados para um ISBN, já no formato do cadastro de livro (mesmos nomes do BookModel):
  * o frontend preenche o formulário com isso, o operador confere/ajusta e envia o POST /api/livro.
- * Campos que a Open Library não tem vêm null.
+ * Campos que a fonte não tem vêm null. source: "ISBNdb", "Open Library" ou "ISBNdb + Open Library".
  */
 public record IsbnLookupResult(
         String isbn,
