@@ -7,16 +7,19 @@ import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.model.LocationModel;
 import searchoteca.service.wms.LocationService;
+import searchoteca.service.wms.StockService;
 
 @RestController
 @RequestMapping("/api/localizacao")
 public class LocationController {
     private final LocationService locationService;
     private final AuditLogService auditLogService;
+    private final StockService stockService;
 
-    public LocationController(LocationService locationService, AuditLogService auditLogService) {
+    public LocationController(LocationService locationService, AuditLogService auditLogService, StockService stockService) {
         this.auditLogService= auditLogService;
         this.locationService=locationService;
+        this.stockService=stockService;
     }
 
     @PreAuthorize("hasAuthority('org_local:view')")
@@ -62,5 +65,11 @@ public class LocationController {
         auditLogService.record(AuditAction.ACCESS,"Books in location: " + localCode);
         return ResponseEntity.ok(locationService.findBookByLocalCode(localCode));
     }
-}
 
+    /** Detalhe da localização: livros que estão nela, com total, disponíveis, emprestados e reservados. */
+    @PreAuthorize("hasAuthority('org_local:view')")
+    @GetMapping("/{localCode}/estoque")
+    public ResponseEntity<?> stock(@PathVariable String localCode){
+        return ResponseEntity.ok(stockService.booksOfLocation(localCode));
+    }
+}
