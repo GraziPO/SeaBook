@@ -7,6 +7,7 @@ import searchoteca.DTO.archive.BatchMoveRequest;
 import searchoteca.DTO.archive.CopyLabel;
 import searchoteca.DTO.archive.CopyLookup;
 import searchoteca.DTO.archive.CopyRequest;
+import searchoteca.DTO.archive.QuantityMoveRequest;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.service.catalog.CopyService;
@@ -56,5 +57,15 @@ public class CopyController {
     @PostMapping("/movimentacao")
     public ResponseEntity<?> moveBatch(@RequestBody BatchMoveRequest request) {
         return ResponseEntity.ok(copyService.moveBatch(request));
+    }
+
+    /**
+     * Movimentação em lote por quantidade (tela "Movimentar conteúdo"): o operador diz quantos exemplares
+     * de cada livro saem da origem; o backend escolhe quais e devolve os números ("cópias 4 e 3").
+     */
+    @PreAuthorize("hasAuthority('copies:edit')")
+    @PostMapping("/movimentacao/quantidade")
+    public ResponseEntity<?> moveByQuantity(@RequestBody QuantityMoveRequest request) {
+        return ResponseEntity.ok(copyService.moveByQuantity(request));
     }
 }

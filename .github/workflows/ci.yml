@@ -95,7 +95,7 @@ jobs:
       - name: Rodar os testes
         run: ./mvnw -B -ntp verify
 
-      # relatório de cada teste, para baixar na página da execução (aba Summary > Artifacts)
+      # relatório de cada teste e da cobertura (JaCoCo: abra jacoco/index.html), para baixar na página da execução (aba Summary > Artifacts)
       - name: Guardar relatórios dos testes
         if: always()
         uses: actions/upload-artifact@v4
@@ -104,5 +104,6 @@ jobs:
           path: |
             target/surefire-reports/
             target/test-logs/
+            target/site/jacoco/
           if-no-files-found: ignore
           retention-days: 7

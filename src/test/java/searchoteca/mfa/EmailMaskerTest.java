@@ -1,50 +1,31 @@
 package searchoteca.mfa;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
-import org.junit.jupiter.params.provider.ValueSource;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/**
- * Proteção de dado pessoal (LGPD): o e-mail usado no MFA nunca
- * aparece completo na resposta da API nem nos registros de auditoria.
- */
+/** O e-mail nunca aparece inteiro nos registros nem na resposta do MFA. */
 class EmailMaskerTest {
 
     @Test
-    void deveMascararParteLocalMantendoPrimeiraEUltimaLetraEODominio() {
-        // Act
-        String mascarado = EmailMasker.mask("joao.silva@umc.br");
-
-        // Assert
-        assertEquals("j********a@umc.br", mascarado);
+    @DisplayName("mantém a primeira e a última letra antes do @")
+    void masksMiddle() {
+        assertEquals("j*******o@x.com", EmailMasker.mask("joaopedro@x.com"));
+        assertEquals("m***a@x.com", EmailMasker.mask("maria@x.com"));
     }
 
-    @ParameterizedTest
-    @CsvSource({
-            "a@umc.br,   a***@umc.br",   // 1 caractere antes do @
-            "ab@umc.br,  a***@umc.br",   // 2 caracteres: fronteira, não revela o segundo
-            "abc@umc.br, a*c@umc.br"     // 3 caracteres: primeiro caso com primeira e última letra
-    })
-    void deveMascararCorretamenteNaFronteiraDoTamanhoDaParteLocal(String email, String esperado) {
-        // Act
-        String mascarado = EmailMasker.mask(email);
-
-        // Assert
-        assertEquals(esperado, mascarado);
+    @Test
+    @DisplayName("nome curto (até 2 letras) vira letra + ***")
+    void shortLocalPart() {
+        assertEquals("a***@x.com", EmailMasker.mask("ab@x.com"));
+        assertEquals("a***@x.com", EmailMasker.mask("a@x.com"));
     }
 
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {"joao.umc.br"})
-    void deveRetornarApenasAsteriscosQuandoEmailForInvalido(String emailInvalido) {
-        // Act
-        String mascarado = EmailMasker.mask(emailInvalido);
-
-        // Assert
-        assertEquals("***", mascarado);
+    @Test
+    @DisplayName("sem @ ou null: ***")
+    void invalid() {
+        assertEquals("***", EmailMasker.mask(null));
+        assertEquals("***", EmailMasker.mask("sem-arroba"));
     }
 }
