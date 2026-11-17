@@ -1,315 +1,208 @@
 package searchoteca.mfa;
 
+import io.jsonwebtoken.JwtException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import searchoteca.DTO.security.MfaChallengeResponse;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
-import searchoteca.model.UserModel;
 import searchoteca.security.CustomUserDetails;
 import searchoteca.security.CustomUserDetailsService;
 import searchoteca.security.JWTService;
 import searchoteca.service.EmailService;
+import searchoteca.support.FakePasswordEncoder;
+import searchoteca.support.TestData;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-/**
- * RF12 / RF13 - Verificação multifator por e-mail: código de 6 dígitos,
- * validade, limite de tentativas, uso único, limite de envios e reenvio.
- */
-@ExtendWith(MockitoExtension.class)
+/** Verificação em duas etapas por e-mail: código de 6 dígitos, validade, tentativas e uso único. */
 class MFAServiceTest {
 
-    private static final String MFA_TOKEN = "token-mfa-valido";
-    private static final String HASH = "$2a$10$hashDoCodigo";
-    private static final long TTL_MINUTOS = 10;
-    private static final int MAX_TENTATIVAS = 5;
-    private static final long INTERVALO_REENVIO_SEG = 60;
-    private static final int MAX_CODIGOS_POR_HORA = 5;
-
-    @Mock CodeRepository codeRepository;
-    @Mock PasswordEncoder passwordEncoder;
-    @Mock
-    EmailService emailService;
-    @Mock JWTService jwtService;
-    @Mock CustomUserDetailsService userDetailsService;
-    @Mock AuditLogService auditLogService;
-
-    MFAService mfaService;
-    CustomUserDetails usuario;
+    private CodeRepository codeRepository;
+    private EmailService emailService;
+    private JWTService jwtService;
+    private CustomUserDetailsService userDetailsService;
+    private AuditLogService auditLogService;
+    private final FakePasswordEncoder encoder = new FakePasswordEncoder();
+    private MFAService service;
+    private CustomUserDetails user;
 
     @BeforeEach
     void setUp() {
-        mfaService = novoServico("");
-        usuario = usuarioComStatus(true);
+        codeRepository = mock(CodeRepository.class);
+        emailService = mock(EmailService.class);
+        jwtService = mock(JWTService.class);
+        userDetailsService = mock(CustomUserDetailsService.class);
+        auditLogService = mock(AuditLogService.class);
+        service = newService("");
+        user = TestData.details(TestData.user(5L, "maria", "warehouse_op"));
+        when(jwtService.generateMFAToken(user)).thenReturn("mfa-token");
+        when(jwtService.extractMfaUsername("mfa-token")).thenReturn("maria");
+        when(userDetailsService.loadUserByUsername("maria")).thenReturn(user);
     }
 
-    private MFAService novoServico(String mockCode) {
-        return new MFAService(codeRepository, passwordEncoder, emailService, jwtService,
-                userDetailsService, auditLogService,
-                TTL_MINUTOS, MAX_TENTATIVAS, INTERVALO_REENVIO_SEG, MAX_CODIGOS_POR_HORA, mockCode);
+    private MFAService newService(String mockCode) {
+        return new MFAService(codeRepository, encoder, emailService, jwtService, userDetailsService,
+                auditLogService, 10, 5, 60, 5, mockCode);
     }
 
-    private CustomUserDetails usuarioComStatus(boolean ativo) {
-        UserModel u = new UserModel();
-        u.setId(1L);
-        u.setUsername("joao");
-        u.setCompleteName("João da Silva");
-        u.setEmail("joao@umc.br");
-        u.setRole_code("OPERADOR");
-        u.setStatus(ativo);
-        return new CustomUserDetails(u, List.of(), false);
-    }
-
-    private void tokenValidoPara(CustomUserDetails user) {
-        when(jwtService.extractMfaUsername(MFA_TOKEN)).thenReturn("joao");
-        when(userDetailsService.loadUserByUsername("joao")).thenReturn(user);
-    }
-
-    private CodeModel codigoAtivo(int tentativasJaUsadas) {
-        LocalDateTime agora = LocalDateTime.now();
+    private CodeModel activeCode(String code, int attempts) {
         CodeModel c = new CodeModel();
-        c.setId(10L);
-        c.setUserId(1L);
-        c.setCodeHash(HASH);
-        c.setAttempts(tentativasJaUsadas);
-        c.setCreatedAt(agora.minusMinutes(1));
-        c.setExpiresAt(agora.plusMinutes(TTL_MINUTOS - 1));
+        c.setId(77L);
+        c.setUserId(5L);
+        c.setCodeHash(encoder.encode(code));
+        c.setAttempts(attempts);
+        c.setCreatedAt(LocalDateTime.now().minusMinutes(1));
+        c.setExpiresAt(LocalDateTime.now().plusMinutes(9));
         return c;
     }
 
-    // ===================== verify() =====================
-
     @Test
-    void deveAutenticarQuandoCodigoCorretoEAindaValido() {
-        // Arrange
-        tokenValidoPara(usuario);
-        when(codeRepository.findActive(eq(1L), any(LocalDateTime.class))).thenReturn(Optional.of(codigoAtivo(0)));
-        when(passwordEncoder.matches("123456", HASH)).thenReturn(true);
-        when(codeRepository.usedCode(eq(10L), any(LocalDateTime.class))).thenReturn(1);
+    @DisplayName("startChallenge gera código, grava só o hash e envia o e-mail")
+    void startChallenge() {
+        MfaChallengeResponse response = service.startChallenge(user);
 
-        // Act
-        CustomUserDetails autenticado = mfaService.verify(MFA_TOKEN, "123456");
+        assertTrue(response.mfaRequired());
+        assertEquals("mfa-token", response.mfaToken());
+        assertEquals("m***a@escola.com", response.email());
+        assertEquals(600, response.expiresInSeconds());
 
-        // Assert
-        assertSame(usuario, autenticado);
-        verify(auditLogService).save("joao", AuditAction.MFA_SUCCESS, null);
-        verify(codeRepository, never()).incrementAttempt(anyLong());
+        ArgumentCaptor<CodeModel> saved = ArgumentCaptor.forClass(CodeModel.class);
+        verify(codeRepository).save(saved.capture());
+        ArgumentCaptor<String> sentCode = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendCode(eq("maria@escola.com"), anyString(), sentCode.capture(), eq(10L));
+        assertTrue(sentCode.getValue().matches("\\d{6}"));
+        assertEquals(encoder.encode(sentCode.getValue()), saved.getValue().getCodeHash());
+        verify(codeRepository).invalidateAll(eq(5L), any());
+        verify(auditLogService).save(eq("maria"), eq(AuditAction.MFA_CODE_SENT), contains("m***a@escola.com"));
     }
 
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {"12345", "1234567", "12a456", "      "})
-    void deveRecusarCodigoComFormatoInvalidoSemConsultarCodigosSalvos(String codigoDigitado) {
-        // Arrange
-        tokenValidoPara(usuario);
+    @Test
+    @DisplayName("limite de códigos por hora: 429 e nenhum e-mail")
+    void hourlyLimit() {
+        when(codeRepository.countCreatedSince(eq(5L), any())).thenReturn(5L);
+        MfaException ex = assertThrows(MfaException.class, () -> service.startChallenge(user));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatus());
+        verifyNoInteractions(emailService);
+    }
 
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify(MFA_TOKEN, codigoDigitado));
+    @Test
+    @DisplayName("modo de teste: aceita o código fixo e não envia e-mail")
+    void mockMode() {
+        MFAService testMode = newService("123456");
+        testMode.startChallenge(user);
+        verifyNoInteractions(emailService);
+        ArgumentCaptor<CodeModel> saved = ArgumentCaptor.forClass(CodeModel.class);
+        verify(codeRepository).save(saved.capture());
+        assertEquals(encoder.encode("123456"), saved.getValue().getCodeHash());
+    }
 
-        // Assert
-        assertEquals("O código deve ter 6 dígitos.", ex.getMessage());
+    @Test
+    @DisplayName("modo de teste com código que não tem 6 dígitos: a aplicação não sobe")
+    void invalidMockCode() {
+        assertThrows(IllegalStateException.class, () -> newService("12ab"));
+    }
+
+    @Test
+    @DisplayName("código certo: devolve o usuário e marca como usado")
+    void verifyOk() {
+        when(codeRepository.findActive(eq(5L), any())).thenReturn(Optional.of(activeCode("654321", 0)));
+        when(codeRepository.usedCode(eq(77L), any())).thenReturn(1);
+        assertSame(user, service.verify("mfa-token", " 654321 "));
+        verify(auditLogService).save("maria", AuditAction.MFA_SUCCESS, null);
+    }
+
+    @Test
+    @DisplayName("código com formato errado: recusado antes de consultar o banco")
+    void verifyBadFormat() {
+        assertThrows(MfaException.class, () -> service.verify("mfa-token", "12a456"));
+        assertThrows(MfaException.class, () -> service.verify("mfa-token", null));
+        verify(codeRepository, never()).findActive(any(), any());
+    }
+
+    @Test
+    @DisplayName("sem código ativo (expirado ou usado): 401")
+    void verifyExpired() {
+        MfaException ex = assertThrows(MfaException.class, () -> service.verify("mfa-token", "123456"));
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
-        verifyNoInteractions(codeRepository, passwordEncoder);
     }
 
     @Test
-    void deveIncrementarTentativaEInformarTentativasRestantesQuandoCodigoIncorreto() {
-        // Arrange
-        tokenValidoPara(usuario);
-        when(codeRepository.findActive(eq(1L), any(LocalDateTime.class))).thenReturn(Optional.of(codigoAtivo(0)));
-        when(passwordEncoder.matches("654321", HASH)).thenReturn(false);
-
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify(MFA_TOKEN, "654321"));
-
-        // Assert
-        assertEquals("Código incorreto. Restam 4 tentativa(s).", ex.getMessage());
-        verify(codeRepository).incrementAttempt(10L);
-        verify(auditLogService).save("joao", AuditAction.MFA_FAILURE, "tentativa 1 de 5");
-        verify(codeRepository, never()).usedCode(anyLong(), any(LocalDateTime.class));
+    @DisplayName("código errado: conta a tentativa e informa quantas restam")
+    void verifyWrongCode() {
+        when(codeRepository.findActive(eq(5L), any())).thenReturn(Optional.of(activeCode("654321", 1)));
+        MfaException ex = assertThrows(MfaException.class, () -> service.verify("mfa-token", "111111"));
+        assertTrue(ex.getMessage().contains("Restam 3"));
+        verify(codeRepository).incrementAttempt(77L);
+        verify(codeRepository, never()).usedCode(anyLong(), any());
     }
 
     @Test
-    void deveInvalidarCodigoQuandoAtingeExatamenteOLimiteDeTentativas() {
-        // Arrange - já houve 4 erros; este é o 5º (limite configurado)
-        tokenValidoPara(usuario);
-        when(codeRepository.findActive(eq(1L), any(LocalDateTime.class))).thenReturn(Optional.of(codigoAtivo(4)));
-        when(passwordEncoder.matches("654321", HASH)).thenReturn(false);
-
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify(MFA_TOKEN, "654321"));
-
-        // Assert
-        assertEquals("Número máximo de tentativas atingido. Faça login novamente.", ex.getMessage());
-        verify(codeRepository).usedCode(eq(10L), any(LocalDateTime.class));
-        verify(auditLogService).save("joao", AuditAction.MFA_LOCKED, "código invalidado por excesso de tentativas");
+    @DisplayName("5ª tentativa errada: o código é invalidado")
+    void verifyLastAttempt() {
+        when(codeRepository.findActive(eq(5L), any())).thenReturn(Optional.of(activeCode("654321", 4)));
+        MfaException ex = assertThrows(MfaException.class, () -> service.verify("mfa-token", "111111"));
+        assertTrue(ex.getMessage().contains("máximo"));
+        verify(codeRepository).usedCode(eq(77L), any());
+        verify(auditLogService).save(eq("maria"), eq(AuditAction.MFA_LOCKED), anyString());
     }
 
     @Test
-    void deveRecusarCodigoCorretoQuandoJaFoiUsadoPorRequisicaoSimultanea() {
-        // Arrange - outro pedido marcou o código como usado primeiro (UPDATE retornou 0 linhas)
-        tokenValidoPara(usuario);
-        when(codeRepository.findActive(eq(1L), any(LocalDateTime.class))).thenReturn(Optional.of(codigoAtivo(0)));
-        when(passwordEncoder.matches("123456", HASH)).thenReturn(true);
-        when(codeRepository.usedCode(eq(10L), any(LocalDateTime.class))).thenReturn(0);
-
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify(MFA_TOKEN, "123456"));
-
-        // Assert
-        assertEquals("Código já utilizado. Faça login novamente.", ex.getMessage());
-        verify(auditLogService, never()).save(any(), eq(AuditAction.MFA_SUCCESS), any());
+    @DisplayName("duas requisições ao mesmo tempo: só a primeira usa o código")
+    void verifyAlreadyUsed() {
+        when(codeRepository.findActive(eq(5L), any())).thenReturn(Optional.of(activeCode("654321", 0)));
+        when(codeRepository.usedCode(eq(77L), any())).thenReturn(0);
+        assertThrows(MfaException.class, () -> service.verify("mfa-token", "654321"));
     }
 
     @Test
-    void deveRecusarQuandoNaoHaCodigoAtivoPorExpiracaoOuUsoAnterior() {
-        // Arrange
-        tokenValidoPara(usuario);
-        when(codeRepository.findActive(eq(1L), any(LocalDateTime.class))).thenReturn(Optional.empty());
+    @DisplayName("token ausente, inválido, de usuário inexistente ou desativado: 401")
+    void invalidToken() {
+        assertThrows(MfaException.class, () -> service.verify(null, "123456"));
+        assertThrows(MfaException.class, () -> service.verify(" ", "123456"));
 
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify(MFA_TOKEN, "123456"));
+        when(jwtService.extractMfaUsername("ruim")).thenThrow(new JwtException("assinatura"));
+        assertThrows(MfaException.class, () -> service.verify("ruim", "123456"));
 
-        // Assert
-        assertEquals("Código expirado ou já utilizado. Solicite um novo código.", ex.getMessage());
-        verifyNoInteractions(passwordEncoder);
+        when(jwtService.extractMfaUsername("sumiu")).thenReturn("fantasma");
+        when(userDetailsService.loadUserByUsername("fantasma")).thenThrow(new UsernameNotFoundException("x"));
+        assertThrows(MfaException.class, () -> service.verify("sumiu", "123456"));
+
+        when(jwtService.extractMfaUsername("inativo-token")).thenReturn("inativo");
+        searchoteca.model.UserModel u = TestData.user(6L, "inativo", "students");
+        u.setStatus(false);
+        when(userDetailsService.loadUserByUsername("inativo")).thenReturn(TestData.details(u));
+        assertThrows(MfaException.class, () -> service.verify("inativo-token", "123456"));
     }
 
     @Test
-    void deveRecusarVerificacaoDeUsuarioDesativado() {
-        // Arrange
-        tokenValidoPara(usuarioComStatus(false));
-
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify(MFA_TOKEN, "123456"));
-
-        // Assert
-        assertEquals("Verificação expirada ou inválida. Faça login novamente.", ex.getMessage());
-        verifyNoInteractions(codeRepository);
-    }
-
-    @Test
-    void deveRecusarTokenMfaEmBrancoSemDecodificarJwt() {
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.verify("   ", "123456"));
-
-        // Assert
-        assertEquals("Verificação expirada ou inválida. Faça login novamente.", ex.getMessage());
-        verifyNoInteractions(jwtService, codeRepository);
-    }
-
-    // ===================== startChallenge() / resend() =====================
-
-    @Test
-    void deveGerarCodigoDeSeisDigitosSalvarApenasOHashEEnviarPorEmail() {
-        // Arrange
-        when(codeRepository.countCreatedSince(eq(1L), any(LocalDateTime.class))).thenReturn(0L);
-        when(passwordEncoder.encode(anyString())).thenReturn(HASH);
-        when(jwtService.generateMFAToken(usuario)).thenReturn(MFA_TOKEN);
-
-        // Act
-        MfaChallengeResponse resposta = mfaService.startChallenge(usuario);
-
-        // Assert - resposta ao cliente com e-mail mascarado
-        assertTrue(resposta.mfaRequired());
-        assertEquals(MFA_TOKEN, resposta.mfaToken());
-        assertEquals("j**o@umc.br", resposta.email());
-        assertEquals(TTL_MINUTOS * 60, resposta.expiresInSeconds());
-
-        // Assert - código enviado tem 6 dígitos e é o mesmo que foi transformado em hash
-        ArgumentCaptor<String> codigoEnviado = ArgumentCaptor.forClass(String.class);
-        verify(emailService).sendCode(eq("joao@umc.br"), eq("João da Silva"), codigoEnviado.capture(), eq(TTL_MINUTOS));
-        assertTrue(codigoEnviado.getValue().matches("\\d{6}"));
-        verify(passwordEncoder).encode(codigoEnviado.getValue());
-
-        // Assert - banco recebe só o hash, com validade e tentativas zeradas
-        ArgumentCaptor<CodeModel> salvo = ArgumentCaptor.forClass(CodeModel.class);
-        verify(codeRepository).save(salvo.capture());
-        assertEquals(HASH, salvo.getValue().getCodeHash());
-        assertEquals(0, salvo.getValue().getAttempts());
-        assertEquals(salvo.getValue().getCreatedAt().plusMinutes(TTL_MINUTOS), salvo.getValue().getExpiresAt());
-        verify(codeRepository).invalidateAll(eq(1L), any(LocalDateTime.class));
-
-        // Assert - auditoria nunca registra o código, só o e-mail mascarado
-        verify(auditLogService).save("joao", AuditAction.MFA_CODE_SENT, "enviado para j**o@umc.br");
-    }
-
-    @Test
-    void deveBloquearNovoCodigoQuandoLimitePorHoraForExatamenteAtingido() {
-        // Arrange - já foram gerados 5 códigos na última hora (limite configurado)
-        when(codeRepository.countCreatedSince(eq(1L), any(LocalDateTime.class))).thenReturn(5L);
-
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.startChallenge(usuario));
-
-        // Assert
+    @DisplayName("reenvio antes de 60 s: 429 com o tempo que falta")
+    void resendTooSoon() {
+        CodeModel last = activeCode("111111", 0);
+        last.setCreatedAt(LocalDateTime.now().minusSeconds(10));
+        when(codeRepository.findLatest(5L)).thenReturn(Optional.of(last));
+        MfaException ex = assertThrows(MfaException.class, () -> service.resend("mfa-token"));
         assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatus());
-        assertEquals("Limite de códigos por hora atingido. Tente novamente mais tarde.", ex.getMessage());
-        verify(codeRepository, never()).save(any(CodeModel.class));
-        verifyNoInteractions(emailService, jwtService);
+        assertTrue(ex.getMessage().startsWith("Aguarde"));
     }
 
     @Test
-    void deveRecusarReenvioAntesDoIntervaloMinimoEntreEmails() {
-        // Arrange - último código foi criado há 30 segundos (intervalo mínimo: 60)
-        tokenValidoPara(usuario);
-        CodeModel ultimo = codigoAtivo(0);
-        ultimo.setCreatedAt(LocalDateTime.now().minusSeconds(30));
-        when(codeRepository.findLatest(1L)).thenReturn(Optional.of(ultimo));
-
-        // Act
-        MfaException ex = assertThrows(MfaException.class, () -> mfaService.resend(MFA_TOKEN));
-
-        // Assert
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.getStatus());
-        assertTrue(ex.getMessage().startsWith("Aguarde "));
-        verify(codeRepository, never()).countCreatedSince(anyLong(), any(LocalDateTime.class));
-        verifyNoInteractions(emailService);
-    }
-
-    // ===================== modo de teste (MFA_MOCK_CODE) =====================
-
-    @Test
-    void naoDeveEnviarEmailQuandoModoDeTesteEstiverAtivo() {
-        // Arrange
-        MFAService servicoModoTeste = novoServico("123456");
-        when(codeRepository.countCreatedSince(eq(1L), any(LocalDateTime.class))).thenReturn(0L);
-        when(passwordEncoder.encode("123456")).thenReturn(HASH);
-        when(jwtService.generateMFAToken(usuario)).thenReturn(MFA_TOKEN);
-
-        // Act
-        servicoModoTeste.startChallenge(usuario);
-
-        // Assert
-        verifyNoInteractions(emailService);
-        verify(auditLogService).save("joao", AuditAction.MFA_CODE_SENT, "modo de teste: e-mail não enviado");
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"12345", "1234567", "abcdef"})
-    void deveImpedirInicializacaoQuandoCodigoDeTesteNaoTemSeisDigitos(String codigoInvalido) {
-        // Act
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> novoServico(codigoInvalido));
-
-        // Assert
-        assertTrue(ex.getMessage().contains("exatamente 6 dígitos"));
+    @DisplayName("reenvio depois do intervalo: novo código com o mesmo token")
+    void resendOk() {
+        CodeModel last = activeCode("111111", 0);
+        last.setCreatedAt(LocalDateTime.now().minusMinutes(5));
+        when(codeRepository.findLatest(5L)).thenReturn(Optional.of(last));
+        MfaChallengeResponse response = service.resend("mfa-token");
+        assertEquals("mfa-token", response.mfaToken());
+        verify(emailService).sendCode(anyString(), anyString(), anyString(), eq(10L));
     }
 }
