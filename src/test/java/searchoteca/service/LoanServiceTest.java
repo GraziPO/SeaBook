@@ -22,6 +22,8 @@ import searchoteca.repository.catalog.BookRepository;
 import searchoteca.repository.catalog.CopyRepository;
 import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.users.UserRepository;
+import searchoteca.service.Loan.LoanService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.settings.SettingsService;
 import searchoteca.support.TestData;
 

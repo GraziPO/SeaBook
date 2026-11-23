@@ -61,6 +61,7 @@ public class LocationService {
         if (location.getLocalCode() != null && locationRepository.existsByLocalCode(location.getLocalCode())) {
             throw new ResourceConflictException("Já existe uma localização com esse código.");
         }
+        location.setLocalDesc(DepartmentService.optional(location.getLocalDesc()));   // descrição opcional
         return locationRepository.save(location);
     }
 
@@ -72,11 +73,11 @@ public class LocationService {
         }
         AuditDiff diff = new AuditDiff()
                 .field("nome", location.getLocalName(), localInfo.getLocalName())
-                .field("descrição", location.getLocalDesc(), localInfo.getLocalDesc())
+                .field("descrição", location.getLocalDesc(), DepartmentService.optional(localInfo.getLocalDesc()))
                 .field("departamento", location.getDepartCode(), localInfo.getDepartCode());
 
         location.setLocalName(localInfo.getLocalName());
-        location.setLocalDesc(localInfo.getLocalDesc());
+        location.setLocalDesc(DepartmentService.optional(localInfo.getLocalDesc()));
         location.setDepartCode(localInfo.getDepartCode());
         LocationModel saved = locationRepository.save(location);
 

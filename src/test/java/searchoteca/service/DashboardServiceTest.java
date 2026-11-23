@@ -7,6 +7,7 @@ import searchoteca.DTO.dashboard.DashboardResponse;
 import searchoteca.auditTrail.AuditLogRepository;
 import searchoteca.controller.DashboardController;
 import searchoteca.repository.DashboardRepository;
+import searchoteca.service.Dashboard.DashboardService;
 import searchoteca.service.settings.SettingsService;
 
 import static org.junit.jupiter.api.Assertions.*;

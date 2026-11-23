@@ -12,6 +12,8 @@ import searchoteca.model.Books.CopyModel;
 import searchoteca.model.Books.status.ExitType;
 import searchoteca.repository.catalog.BookRepository;
 import searchoteca.repository.catalog.CopyRepository;
+import searchoteca.service.catalog.ExitService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.settings.SettingsService;
 import searchoteca.support.TestData;
 
@@ -25,6 +27,7 @@ import static org.mockito.Mockito.*;
 /** Vendas e outras saídas: o exemplar sai do acervo (sem ser apagado) e é emitido o comprovante. */
 class ExitServiceTest {
 
+    private WaitlistService waitlistService;
     private static final String ISBN = "9788535914849";
 
     private CopyRepository copyRepository;
@@ -39,7 +42,8 @@ class ExitServiceTest {
         bookRepository = mock(BookRepository.class);
         receiptService = mock(ReceiptService.class);
         settingsService = mock(SettingsService.class);
-        service = new ExitService(copyRepository, bookRepository, receiptService, settingsService);
+        waitlistService = mock(WaitlistService.class);
+        service = new ExitService(copyRepository, bookRepository, receiptService, settingsService, waitlistService);
         when(settingsService.salesEnabled()).thenReturn(true);
     }
 
@@ -135,5 +139,27 @@ class ExitServiceTest {
                 () -> service.register(new ExitRequest(ExitType.DONATION, List.of(1L), null), TestData.operator()));
         verify(copyRepository, never()).saveAll(any());
         verifyNoInteractions(receiptService);
+    }
+
+    @Test
+    @DisplayName("depois da saída, confere a fila de cada título (uma vez por título): sem exemplar, ela é encerrada")
+    void exitChecksQueueOncePerTitle() {
+        CopyModel a = TestData.copy(1, ISBN, 1, "L1", "AVAILABLE");
+        CopyModel b = TestData.copy(2, ISBN, 2, "L1", "AVAILABLE");
+        when(copyRepository.findAllById(any())).thenReturn(List.of(a, b));
+        when(bookRepository.findByIsbnIn(any())).thenReturn(List.of(TestData.book(ISBN, "Dom Casmurro", null)));
+
+        service.register(new ExitRequest(ExitType.DONATION, List.of(1L, 2L), null), TestData.operator());
+
+        verify(waitlistService, times(1)).closeQueueIfNoCopies(ISBN);
+    }
+
+    @Test
+    @DisplayName("saída recusada (exemplar indisponível): a fila não é mexida")
+    void refusedExitLeavesQueue() {
+        copies("LOANED", null);
+        assertThrows(ResourceConflictException.class,
+                () -> service.register(new ExitRequest(ExitType.DONATION, List.of(1L), null), TestData.operator()));
+        verifyNoInteractions(waitlistService);
     }
 }

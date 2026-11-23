@@ -1,5 +1,6 @@
 package searchoteca.resetPassword;
 
+import searchoteca.components.Emails;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -7,7 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.mfa.EmailMasker;
-import searchoteca.service.EmailService;
+import searchoteca.service.Email.EmailService;
 import searchoteca.mfa.MfaException;
 import searchoteca.model.UserModel;
 import searchoteca.repository.users.UserRepository;
@@ -127,6 +128,7 @@ public class PasswordResetService {
     private UserModel findByLogin(String login) {
         if (login == null || login.isBlank()) return null;
         String value = login.trim();
-        return value.contains("@") ? userRepository.findByEmail(value) : userRepository.findByUsername(value);
+        // o e-mail fica gravado em minúsculas: "Maria@Escola.com" encontra a mesma conta
+        return value.contains("@") ? userRepository.findByEmail(Emails.normalize(value)) : userRepository.findByUsername(value);
     }
 }

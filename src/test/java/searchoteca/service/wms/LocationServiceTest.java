@@ -100,4 +100,21 @@ class LocationServiceTest {
         assertEquals(1, service.findBookByLocalCode("L1").size());
         assertThrows(ResourceNotFoundException.class, () -> service.findBookByLocalCode(null));
     }
+
+    // ------------------------------------------------------------------ descrição opcional
+
+    @Test
+    @DisplayName("descrição é opcional: em branco vira null no cadastro e na edição")
+    void optionalDescription() {
+        LocationModel nova = TestData.location("L9", "CIE");
+        nova.setLocalDesc("  ");
+        assertNull(service.create(nova).getLocalDesc());
+
+        LocationModel info = TestData.location("L1", "CIE");
+        info.setLocalDesc(null);
+        assertNull(service.update("L1", info).getLocalDesc());
+
+        info.setLocalDesc(" Sala 2 ");
+        assertEquals("Sala 2", service.update("L1", info).getLocalDesc());
+    }
 }

@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS org_copies(
     depart_code VARCHAR REFERENCES org_depart(depart_code),
     local_code  VARCHAR REFERENCES org_local(local_code),
     copy_index INT NOT NULL,
-    copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || depart_code || local_code || CAST(copy_index AS VARCHAR)),
+    copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || CAST(copy_index AS VARCHAR)),
     status VARCHAR(20) DEFAULT 'AVAILABLE',
     UNIQUE (isbn, copy_index)
 );

@@ -64,4 +64,23 @@ class StudentServiceTest {
                 () -> service.create(new StudentRequest("maria", "Maria", "m@x.com", null, null, null)));
         verifyNoInteractions(userRepository, studentRepository);
     }
+
+    @Test
+    @DisplayName("cadastro de aluno: e-mail gravado em minúsculas")
+    void createLowercasesEmail() {
+        service.create(new StudentRequest("maria", "Maria Souza", " Maria.Souza@Escola.COM ", null, "RA123", null));
+        ArgumentCaptor<UserModel> user = ArgumentCaptor.forClass(UserModel.class);
+        verify(userRepository).save(user.capture());
+        assertEquals("maria.souza@escola.com", user.getValue().getEmail());
+    }
+
+    @Test
+    @DisplayName("cadastro de aluno: e-mail já usado (em qualquer caixa) é recusado sem gravar")
+    void createDuplicatedEmail() {
+        when(userRepository.findByEmail("maria@escola.com")).thenReturn(new UserModel());
+        assertThrows(ResourceConflictException.class,
+                () -> service.create(new StudentRequest("maria2", "Maria", "MARIA@escola.com", null, "RA9", null)));
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(studentRepository);
+    }
 }

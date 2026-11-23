@@ -11,7 +11,7 @@ import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.security.CustomUserDetails;
 import searchoteca.service.ReceiptService;
-import searchoteca.service.ExitService;
+import searchoteca.service.catalog.ExitService;
 
 @RestController
 @RequestMapping("/api/saidas")

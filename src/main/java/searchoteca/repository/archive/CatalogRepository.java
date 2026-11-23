@@ -16,11 +16,21 @@ public class CatalogRepository {
         this.jdbc = jdbc;
     }
 
+    // Exemplar "no acervo" = em circulação: AVAILABLE, LOANED ou RESERVED (a mesma regra do copyCounts
+    // da fila). Vendidos, doados e baixados saíram de vez e não contam (nem no total, nem em "onde encontrar").
+
+    /**
+     * Busca da consulta (Livros Disponíveis): só títulos com ao menos um exemplar no acervo.
+     * Título sem exemplar (recém-cadastrado ou com todas as cópias fora) não aparece: não dá para
+     * emprestar nem entrar na fila dele. Ele continua em Controle de Títulos para o operador.
+     */
     private static final String WHERE = """
-            WHERE b.title ILIKE :pattern
-            OR b.author ILIKE :pattern
-            OR b.genre ILIKE :pattern
-            OR b.publisher ILIKE :pattern
+            WHERE (b.title ILIKE :pattern
+                OR b.author ILIKE :pattern
+                OR b.genre ILIKE :pattern
+                OR b.publisher ILIKE :pattern)
+              AND EXISTS (SELECT 1 FROM org_copies ic
+                          WHERE ic.isbn = b.isbn AND ic.status IN ('AVAILABLE', 'LOANED', 'RESERVED'))
             """;
 
     public List<BookSearchResult> search(String pattern, int limit, int offset) {
@@ -29,7 +39,7 @@ public class CatalogRepository {
                     COUNT(c.copy_id) AS total_copies,
                     COUNT(c.copy_id) FILTER (WHERE c.status = 'AVAILABLE') AS available_copies
                 FROM org_books b
-                LEFT JOIN org_copies c ON c.isbn = b.isbn
+                LEFT JOIN org_copies c ON c.isbn = b.isbn AND c.status IN ('AVAILABLE', 'LOANED', 'RESERVED')
                 """ + WHERE + """
                 GROUP BY b.book_id
                 ORDER BY b.title
@@ -61,7 +71,7 @@ public class CatalogRepository {
                 FROM org_copies c
                 JOIN org_local l ON l.local_code = c.local_code
                 JOIN org_depart d ON d.depart_code = c.depart_code
-                WHERE c.isbn = :isbn
+                WHERE c.isbn = :isbn AND c.status IN ('AVAILABLE', 'LOANED', 'RESERVED')
                 GROUP BY d.depart_code, d.depart_name, l.local_code, l.local_name
                 ORDER BY d.depart_code, d.depart_name, l.local_code
                 """;

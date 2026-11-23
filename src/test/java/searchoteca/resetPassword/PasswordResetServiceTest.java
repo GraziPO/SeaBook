@@ -10,7 +10,7 @@ import searchoteca.exception.ResourceConflictException;
 import searchoteca.mfa.MfaException;
 import searchoteca.model.UserModel;
 import searchoteca.repository.users.UserRepository;
-import searchoteca.service.EmailService;
+import searchoteca.service.Email.EmailService;
 import searchoteca.support.FakePasswordEncoder;
 import searchoteca.support.TestData;
 
@@ -153,5 +153,12 @@ class PasswordResetServiceTest {
         when(codes.usedCode(eq(40L), any())).thenReturn(0);
         assertThrows(MfaException.class, () -> service.resetPassword("maria", "246810", "NovaSenha1"));
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("esqueci a senha pelo e-mail em caixa alta encontra a mesma conta")
+    void requestByEmailAnyCase() {
+        service.requestReset("  Maria@ESCOLA.com ");
+        verify(emailService).sendPasswordResetCode(eq("maria@escola.com"), anyString(), anyString(), eq(15L));
     }
 }

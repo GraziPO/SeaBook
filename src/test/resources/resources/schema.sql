@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS org_copies(
     depart_code VARCHAR REFERENCES org_depart(depart_code),
     local_code  VARCHAR REFERENCES org_local(local_code),
     copy_index INT NOT NULL,
-    copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || depart_code || local_code || copy_index :: text) STORED,
+    copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || copy_index :: text) STORED,
     status VARCHAR(20) DEFAULT 'DISPONÍVEL',
     UNIQUE (isbn,copy_index)
 );

@@ -10,7 +10,7 @@ import searchoteca.auditTrail.AuditLogService;
 import searchoteca.model.waitingLine.WaitlistEntry;
 import searchoteca.model.waitingLine.WaitlistSummary;
 import searchoteca.security.CustomUserDetails;
-import searchoteca.service.WaitlistService;
+import searchoteca.service.catalog.WaitlistService;
 
 import java.util.List;
 

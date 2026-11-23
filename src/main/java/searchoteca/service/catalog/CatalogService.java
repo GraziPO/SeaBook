@@ -3,6 +3,7 @@ package searchoteca.service.catalog;
 import org.springframework.stereotype.Service;
 import searchoteca.DTO.archive.publicSearch.BookDetail;
 import searchoteca.DTO.archive.publicSearch.BookSearchResult;
+import searchoteca.DTO.archive.publicSearch.CopyAvaliability;
 import searchoteca.DTO.archive.publicSearch.PageResponse;
 import searchoteca.exception.ResourceNotFoundException;
 import searchoteca.model.Books.BookModel;
@@ -45,13 +46,19 @@ public class CatalogService {
             throw new ResourceNotFoundException("registro não encontrado");
         }
 
+        // mesma regra da busca: título sem exemplar no acervo não aparece, nem pelo link direto
+        List<CopyAvaliability> where = catalogRepository.findAvailability(isbn);
+        if (where.isEmpty()) {
+            throw new ResourceNotFoundException("Este título não tem exemplares no acervo no momento.");
+        }
+
         return new BookDetail(book.getIsbn(),
                 book.getTitle(),
                 book.getAuthor(),
                 book.getPublisher(),
                 book.getGenre(),
                 book.getRel_year(),
-                catalogRepository.findAvailability(isbn));
+                where);
     }
 
     private static String escapeLike(String s){

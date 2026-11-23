@@ -13,7 +13,7 @@ import searchoteca.auditTrail.AuditLogService;
 import searchoteca.security.CustomUserDetails;
 import searchoteca.security.CustomUserDetailsService;
 import searchoteca.security.JWTService;
-import searchoteca.service.EmailService;
+import searchoteca.service.Email.EmailService;
 import searchoteca.support.FakePasswordEncoder;
 import searchoteca.support.TestData;
 

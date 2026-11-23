@@ -1,4 +1,4 @@
-package searchoteca.service;
+package searchoteca.service.catalog;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -270,6 +270,27 @@ public class WaitlistService {
             if (reservedCopy != null) {
                 copyRepository.findById(reservedCopy).ifPresent(this::releaseCopy);
             }
+        }
+        return entries.size();
+    }
+
+    /**
+     * O título ficou sem nenhum exemplar no acervo (venda, doação ou baixa da última cópia em circulação):
+     * a fila não tem mais como andar. Encerra quem estava esperando, em vez de deixar a pessoa
+     * na fila para sempre. Se ainda houver exemplar (mesmo emprestado), não faz nada.
+     * @return quantas entradas foram encerradas
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public int closeQueueIfNoCopies(String isbn) {
+        int[] counts = writeRepository.copyCounts(isbn);
+        if (counts[1] > 0) {
+            return 0;
+        }
+        List<WaitlistModel> entries = waitlistRepository.findActiveByIsbn(isbn);
+        entries.forEach(entry -> close(entry, WaitlistStatus.CANCELLED));
+        if (!entries.isEmpty()) {
+            auditLogService.record(AuditAction.WAITLIST_CLOSED,
+                    "fila do ISBN " + isbn + " encerrada: o título ficou sem exemplares (" + entries.size() + " aluno(s))");
         }
         return entries.size();
     }

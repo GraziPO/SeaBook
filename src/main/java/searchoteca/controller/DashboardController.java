@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import searchoteca.DTO.dashboard.DashboardResponse;
-import searchoteca.service.DashboardService;
+import searchoteca.service.Dashboard.DashboardService;
 
 @RestController
 @RequestMapping("/api/dashboard")

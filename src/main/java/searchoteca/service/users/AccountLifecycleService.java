@@ -16,7 +16,7 @@ import searchoteca.repository.users.AccountLifecycleRepository.PersonalData;
 import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.users.UserRepository;
 import searchoteca.security.CurrentUser;
-import searchoteca.service.WaitlistService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.settings.SettingsService;
 
 import java.util.List;

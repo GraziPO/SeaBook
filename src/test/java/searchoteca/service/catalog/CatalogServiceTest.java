@@ -85,4 +85,14 @@ class CatalogServiceTest {
         when(bookRepository.findByIsbn("1")).thenReturn(TestData.book("1", "X"));
         assertNotNull(controller.bookDetail("1").getBody());
     }
+
+    @Test
+    @DisplayName("título cadastrado mas sem exemplar no acervo: o detalhe também não aparece (404)")
+    void detailHiddenWithoutCopies() {
+        when(bookRepository.findByIsbn("9788535914849")).thenReturn(TestData.book("9788535914849", "Dom Casmurro"));
+        when(catalogRepository.findAvailability("9788535914849")).thenReturn(List.of());
+        ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
+                () -> service.detail("9788535914849"));
+        assertTrue(ex.getMessage().contains("sem exemplares") || ex.getMessage().contains("não tem exemplares"));
+    }
 }
