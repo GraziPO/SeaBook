@@ -9,7 +9,7 @@ import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.model.LoanModel;
 import searchoteca.security.CustomUserDetails;
-import searchoteca.service.LoanService;
+import searchoteca.service.Loan.LoanService;
 
 @RestController
 @RequestMapping("api/emprestimos")

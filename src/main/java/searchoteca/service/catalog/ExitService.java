@@ -1,4 +1,4 @@
-package searchoteca.service;
+package searchoteca.service.catalog;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +14,7 @@ import searchoteca.model.Books.status.ExitType;
 import searchoteca.repository.catalog.BookRepository;
 import searchoteca.repository.catalog.CopyRepository;
 import searchoteca.security.CustomUserDetails;
+import searchoteca.service.ReceiptService;
 import searchoteca.service.settings.SettingsService;
 
 import java.math.BigDecimal;
@@ -26,12 +27,15 @@ public class ExitService {
     private final BookRepository bookRepository;
     private final ReceiptService receiptService;
     private final SettingsService settingsService;
+    private final WaitlistService waitlistService;
 
-    public ExitService(CopyRepository copyRepository, BookRepository bookRepository, ReceiptService receiptService, SettingsService settingsService) {
+    public ExitService(CopyRepository copyRepository, BookRepository bookRepository, ReceiptService receiptService,
+                       SettingsService settingsService, WaitlistService waitlistService) {
         this.copyRepository = copyRepository;
         this.bookRepository = bookRepository;
         this.receiptService = receiptService;
         this.settingsService = settingsService;
+        this.waitlistService = waitlistService;
     }
 
     @Transactional
@@ -89,6 +93,8 @@ public class ExitService {
         }
 
         copyRepository.saveAll(copies);
+        // se saiu a última cópia de um título, a fila dele não anda mais: encerra quem esperava
+        copies.stream().map(CopyModel::getIsbn).distinct().forEach(waitlistService::closeQueueIfNoCopies);
         return receiptService.issue(type,operator, null, null, null, items, request.notes());
     }
 }

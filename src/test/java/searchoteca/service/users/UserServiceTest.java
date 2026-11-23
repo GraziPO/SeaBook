@@ -5,6 +5,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
+import searchoteca.DTO.archive.publicSearch.PageResponse;
+import searchoteca.DTO.users.UserRow;
 import searchoteca.auditTrail.AuditAction;
 import searchoteca.auditTrail.AuditLogService;
 import searchoteca.exception.ResourceConflictException;
@@ -16,7 +18,7 @@ import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.users.UserQueryRepository;
 import searchoteca.repository.users.UserRepository;
 import searchoteca.resetPassword.PasswordPolicy;
-import searchoteca.service.WaitlistService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.support.FakePasswordEncoder;
 import searchoteca.support.TestData;
 
@@ -130,6 +132,7 @@ class UserServiceTest {
     void listing() {
         when(userRepository.findAll()).thenReturn(List.of(TestData.user(2L, "joao", "loan_op")));
         assertEquals(1, service.findAll().size());
+        when(userQueryRepository.search(eq(true), any())).thenReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
         service.findPage(true, 0, 20);
         verify(userQueryRepository).search(eq(true), any());
     }
@@ -287,5 +290,115 @@ class UserServiceTest {
         TestData.loginWithAuthorities(AccountLifecycleService.PERM_MANAGE);
         service.activate("maria");
         verify(lifecycleRepository).markReactivated(10L);
+    }
+
+    // ------------------------------------------------------------------ e-mail mascarado na listagem
+
+    @Test
+    @DisplayName("listagem: o e-mail sai mascarado; o resto da linha e a paginação não mudam")
+    void listingMasksEmail() {
+        UserRow ana = new UserRow(7L, "ana.lima", "Ana Lima", "ana.lima@escola.com", "students", true, "RA123");
+        UserRow semEmail = new UserRow(8L, "bia", "Bia", null, "students", true, "RA124");
+        when(userQueryRepository.search(eq(true), any()))
+                .thenReturn(new PageResponse<>(List.of(ana, semEmail), 2, 20, 42, 3));
+
+        PageResponse<UserRow> page = service.findPage(true, 2, 20);
+
+        assertEquals("a******a@escola.com", page.content().get(0).email());
+        assertFalse(page.content().get(0).email().contains("ana.lima"));
+        assertEquals("ana.lima", page.content().get(0).username());
+        assertEquals("RA123", page.content().get(0).ra());
+        assertNull(page.content().get(1).email());
+        assertEquals(2, page.page());
+        assertEquals(42, page.totalElements());
+        assertEquals(3, page.totalPages());
+    }
+
+    @Test
+    @DisplayName("edição com e-mail em branco mantém o atual e não registra troca de e-mail")
+    void updateBlankEmailKeepsCurrent() {
+        UserModel db = TestData.user(2L, "joao", "loan_op");
+        when(userRepository.findByUsername("joao")).thenReturn(db);
+        UserModel changes = newUser("joao", "loan_op");
+        changes.setCompleteName("João Silva");
+        changes.setEmail("   ");
+
+        UserModel saved = service.update("joao", changes);
+
+        assertEquals("joao@escola.com", saved.getEmail());
+        verify(audit).record(eq(AuditAction.UPDATE), argThat(s -> !s.contains("e-mail")));
+    }
+
+    @Test
+    @DisplayName("edição com e-mail preenchido troca o e-mail (sem espaços nas pontas)")
+    void updateNewEmail() {
+        UserModel db = TestData.user(2L, "joao", "loan_op");
+        when(userRepository.findByUsername("joao")).thenReturn(db);
+        UserModel changes = newUser("joao", "loan_op");
+        changes.setEmail("  joao.novo@escola.com ");
+
+        assertEquals("joao.novo@escola.com", service.update("joao", changes).getEmail());
+        verify(audit).record(eq(AuditAction.UPDATE), contains("e-mail"));
+    }
+
+    @Test
+    @DisplayName("edição que devolve o e-mail mascarado (campo não mexido) mantém o atual")
+    void updateMaskedEmailKeepsCurrent() {
+        UserModel db = TestData.user(2L, "joao", "loan_op");
+        when(userRepository.findByUsername("joao")).thenReturn(db);
+        UserModel changes = newUser("joao", "loan_op");
+        changes.setEmail("j**o@escola.com");          // o que a lista mostrou
+
+        assertEquals("joao@escola.com", service.update("joao", changes).getEmail());
+        verify(audit).record(eq(AuditAction.UPDATE), argThat(s -> !s.contains("e-mail")));
+    }
+
+    // ------------------------------------------------------------------ e-mail sempre em minúsculas
+
+    @Test
+    @DisplayName("cadastro: o e-mail é gravado em minúsculas, venha como vier")
+    void createLowercasesEmail() {
+        TestData.loginWithAuthorities("users:create");
+        UserModel u = newUser("joao", "loan_op");
+        u.setEmail(" Joao.Silva@ESCOLA.com ");
+        assertEquals("joao.silva@escola.com", service.create(u).getEmail());
+    }
+
+    @Test
+    @DisplayName("cadastro: e-mail já usado por outra conta, mesmo com outra caixa, é recusado")
+    void createDuplicatedEmailAnyCase() {
+        TestData.loginWithAuthorities("users:create");
+        when(userRepository.findByEmail("maria@escola.com")).thenReturn(TestData.user(9L, "maria", "students"));
+        UserModel u = newUser("joao", "loan_op");
+        u.setEmail("MARIA@Escola.com");
+        assertThrows(ResourceConflictException.class, () -> service.create(u));
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("edição: e-mail novo em caixa alta é gravado em minúsculas")
+    void updateLowercasesEmail() {
+        UserModel db = TestData.user(2L, "joao", "loan_op");
+        when(userRepository.findByUsername("joao")).thenReturn(db);
+        UserModel changes = newUser("joao", "loan_op");
+        changes.setEmail("Joao.Novo@Escola.COM");
+        assertEquals("joao.novo@escola.com", service.update("joao", changes).getEmail());
+    }
+
+    @Test
+    @DisplayName("edição: trocar para o e-mail de outra conta é recusado; manter o próprio, não")
+    void updateDuplicatedEmail() {
+        UserModel db = TestData.user(2L, "joao", "loan_op");
+        when(userRepository.findByUsername("joao")).thenReturn(db);
+        when(userRepository.findByEmail("maria@escola.com")).thenReturn(TestData.user(9L, "maria", "students"));
+        when(userRepository.findByEmail("joao@escola.com")).thenReturn(db);
+
+        UserModel toMaria = newUser("joao", "loan_op");
+        toMaria.setEmail("Maria@Escola.com");
+        assertThrows(ResourceConflictException.class, () -> service.update("joao", toMaria));
+
+        UserModel same = newUser("joao", "loan_op");
+        same.setEmail("JOAO@escola.com");
+        assertEquals("joao@escola.com", service.update("joao", same).getEmail());
     }
 }

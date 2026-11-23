@@ -20,6 +20,7 @@ import searchoteca.repository.catalog.CopyRepository;
 import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.waitlist.WaitlistQueryRepository;
 import searchoteca.repository.waitlist.WaitlistRepository;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.settings.SettingsService;
 import searchoteca.support.TestData;
 
@@ -303,5 +304,50 @@ class WaitlistServiceTest {
         when(waitlistRepository.countWaiting(ISBN)).thenReturn(1L);
         assertTrue(service.hasWaiting(ISBN));
         assertFalse(service.hasWaiting("000"));
+    }
+
+    // ------------------------------------------------------------------ título sem exemplar: fila encerrada
+
+    private WaitlistModel waiting(long id) {
+        WaitlistModel w = new WaitlistModel();
+        w.setWaitlistId(id);
+        w.setIsbn(ISBN);
+        w.setStatus("WAITING");
+        return w;
+    }
+
+    @Test
+    @DisplayName("saiu a última cópia: quem esperava é encerrado (CANCELLED) e fica registrado na auditoria")
+    void closeQueueWhenNoCopiesLeft() {
+        when(queryRepository.copyCounts(ISBN)).thenReturn(new int[]{0, 0});
+        WaitlistModel w1 = waiting(1), w2 = waiting(2);
+        when(waitlistRepository.findActiveByIsbn(ISBN)).thenReturn(List.of(w1, w2));
+
+        assertEquals(2, service.closeQueueIfNoCopies(ISBN));
+
+        assertEquals("CANCELLED", w1.getStatus());
+        assertEquals("CANCELLED", w2.getStatus());
+        assertNotNull(w1.getClosedAt());
+        verify(waitlistRepository).save(w1);
+        verify(waitlistRepository).save(w2);
+        verify(auditLogService).record(eq(AuditAction.WAITLIST_CLOSED), contains(ISBN));
+    }
+
+    @Test
+    @DisplayName("ainda há exemplar (mesmo emprestado): a fila continua como está")
+    void keepQueueWhileThereAreCopies() {
+        when(queryRepository.copyCounts(ISBN)).thenReturn(new int[]{0, 1});
+        assertEquals(0, service.closeQueueIfNoCopies(ISBN));
+        verify(waitlistRepository, never()).findActiveByIsbn(any());
+        verify(waitlistRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("sem exemplar e sem ninguém na fila: nada a encerrar, nada na auditoria")
+    void emptyQueueNothingToClose() {
+        when(queryRepository.copyCounts(ISBN)).thenReturn(new int[]{0, 0});
+        when(waitlistRepository.findActiveByIsbn(ISBN)).thenReturn(List.of());
+        assertEquals(0, service.closeQueueIfNoCopies(ISBN));
+        verify(auditLogService, never()).record(eq(AuditAction.WAITLIST_CLOSED), any());
     }
 }

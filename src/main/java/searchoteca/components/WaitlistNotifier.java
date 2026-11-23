@@ -3,7 +3,7 @@ package searchoteca.components;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
-import searchoteca.service.EmailService;
+import searchoteca.service.Email.EmailService;
 import searchoteca.model.waitingLine.WaitlistReservedEvent;
 import searchoteca.repository.waitlist.WaitlistQueryRepository;
 

@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * Resultado da movimentação por quantidade.
  * books: por livro, os números dos exemplares escolhidos ("Dom Casmurro — cópias 4 e 3").
- * labels: as etiquetas com os códigos novos (o código inclui a localização, então muda).
+ * labels: os exemplares movimentados. O código (ISBN + número do exemplar) não muda com a
+ *         localização, então a etiqueta continua a mesma; a lista serve para conferir o que foi.
  */
 public record QuantityMoveResult(
         String fromLocalCode,

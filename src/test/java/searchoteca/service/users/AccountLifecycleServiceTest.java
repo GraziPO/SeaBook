@@ -15,7 +15,7 @@ import searchoteca.repository.users.AccountLifecycleRepository;
 import searchoteca.repository.users.AccountLifecycleRepository.PersonalData;
 import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.users.UserRepository;
-import searchoteca.service.WaitlistService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.settings.SettingsService;
 import searchoteca.support.FakePasswordEncoder;
 import searchoteca.support.TestData;

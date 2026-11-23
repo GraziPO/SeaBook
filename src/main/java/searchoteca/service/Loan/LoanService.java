@@ -1,4 +1,4 @@
-package searchoteca.service;
+package searchoteca.service.Loan;
 
 import org.springframework.data.domain.Sort;
 import searchoteca.DTO.archive.publicSearch.PageResponse;
@@ -27,9 +27,10 @@ import searchoteca.repository.archive.LoanRulesRepository;
 import searchoteca.DTO.archive.LoanView;
 import searchoteca.DTO.archive.StudentLoanItem;
 import searchoteca.security.CustomUserDetails;
+import searchoteca.service.ReceiptService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.settings.SettingsService;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

@@ -2,14 +2,14 @@ CREATE TABLE IF NOT EXISTS org_depart(
     depart_id SERIAL PRIMARY KEY,
     depart_code VARCHAR(20) UNIQUE,
     depart_name VARCHAR(100) NOT NULL UNIQUE,
-    depart_desc VARCHAR(100) NOT NULL
+    depart_desc VARCHAR(100)
 );
 
 CREATE TABLE IF NOT EXISTS org_local(
     local_id SERIAL PRIMARY KEY,
     local_code VARCHAR(20) UNIQUE,
     local_name VARCHAR(100) NOT NULL UNIQUE,
-    local_desc VARCHAR(100) NOT NULL,
+    local_desc VARCHAR(100),
     depart_code VARCHAR,
     FOREIGN KEY (depart_code) REFERENCES org_depart(depart_code)
 );
@@ -32,12 +32,17 @@ CREATE TABLE IF NOT EXISTS org_copies(
     depart_code VARCHAR REFERENCES org_depart(depart_code),
     local_code  VARCHAR REFERENCES org_local(local_code),
     copy_index INT NOT NULL,
-    copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || depart_code || local_code || copy_index :: text) STORED,
+    -- código da etiqueta: ISBN + número do exemplar. Não depende da localização, então movimentar
+    -- não muda o código nem pede etiqueta nova. Banco criado antes dessa mudança: rode uma vez o
+    -- migracao-codigo-exemplar.sql (o CREATE TABLE IF NOT EXISTS não altera tabela que já existe).
+    copy_custom_code VARCHAR(60) GENERATED ALWAYS AS (isbn || copy_index :: text) STORED,
     status VARCHAR(20) DEFAULT 'AVAILABLE',
     UNIQUE (isbn,copy_index)
 );
 
 CREATE INDEX IF NOT EXISTS idx_copies_isbn ON org_copies(isbn);
+-- um código por exemplar (a leitura da etiqueta procura por ele)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_copies_custom_code ON org_copies(copy_custom_code);
 
 CREATE TABLE IF NOT EXISTS sys_roles(
     role_id SERIAL PRIMARY KEY,

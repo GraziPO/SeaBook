@@ -24,7 +24,6 @@ import searchoteca.repository.catalog.CopyRepository;
 import searchoteca.repository.archive.LocationRepository;
 import searchoteca.repository.archive.StockQueryRepository;
 import searchoteca.repository.archive.StockQueryRepository.PickedCopy;
-import searchoteca.service.WaitlistService;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -133,7 +132,8 @@ public class CopyService {
                 .map(c ->{
                     BookModel book = books.get(c.getIsbn());
                     return  new CopyLabel(c.getCopyId(),c.getCopy_custom_code(),
-                            book.getTitle(),book.getAuthor(),c.getDepartCode(),c.getLocalCode(),c.getCopy_index());
+                            book.getTitle(),book.getAuthor(),c.getDepartCode(),c.getLocalCode(),c.getCopy_index(),
+                            book.getSalePrice());   // preço só como texto na etiqueta; o código não muda
                 })
                 .toList();
     }

@@ -59,6 +59,7 @@ public class DepartmentService {
         return departmentRepository.findByDepartCode(departCode);
     }
     public DepartmentModel create(DepartmentModel department){
+        department.setDepartDesc(optional(department.getDepartDesc()));
         return departmentRepository.save(department);
     }
 
@@ -71,16 +72,21 @@ public class DepartmentService {
         // o diff é montado antes de alterar: compara o que está no banco com o que chegou (RF22)
         AuditDiff diff = new AuditDiff()
                 .field("nome", department.getDepartName(), departInfo.getDepartName())
-                .field("descrição", department.getDepartDesc(), departInfo.getDepartDesc());
+                .field("descrição", department.getDepartDesc(), optional(departInfo.getDepartDesc()));
 
         department.setDepartName(departInfo.getDepartName());
-        department.setDepartDesc(departInfo.getDepartDesc());
+        department.setDepartDesc(optional(departInfo.getDepartDesc()));
         DepartmentModel saved = departmentRepository.save(department);
 
         auditLogService.record(AuditAction.UPDATE, "departamento " + departCode + ": " + diff);
         return saved;
     }
 
+
+    /** A descrição é opcional: em branco (ou só espaços) vira null, sem guardar texto vazio. */
+    static String optional(String text) {
+        return text == null || text.isBlank() ? null : text.trim();
+    }
 
     public void delete(String departCode){
         DepartmentModel department = departCode == null ? null : departmentRepository.findByDepartCode(departCode);

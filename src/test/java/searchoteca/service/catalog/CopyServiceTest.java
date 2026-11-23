@@ -15,7 +15,6 @@ import searchoteca.repository.archive.StockQueryRepository.PickedCopy;
 import searchoteca.repository.catalog.BookRepository;
 import searchoteca.repository.catalog.CopyQueryRepository;
 import searchoteca.repository.catalog.CopyRepository;
-import searchoteca.service.WaitlistService;
 import searchoteca.support.TestData;
 
 import java.util.ArrayList;
@@ -312,5 +311,24 @@ class CopyServiceTest {
         assertThrows(ResourceConflictException.class, () -> service.moveByQuantity(new QuantityMoveRequest("L1", "L2", null)));
         assertTrue(assertThrows(ResourceConflictException.class, () -> service.moveByQuantity(new QuantityMoveRequest("L1", "L2",
                 List.of(new QuantityMoveRequest.Item(ISBN, 201))))).getMessage().contains("Máximo de 200"));
+    }
+
+    @Test
+    @DisplayName("etiqueta leva o preço do livro (quando há) e o código continua só ISBN + número")
+    void labelCarriesPrice() {
+        when(bookRepository.findByIsbnIn(any())).thenReturn(List.of(TestData.book(ISBN, "Dom Casmurro", "39.90")));
+        store(TestData.copy(1, ISBN, 1, "L1", "AVAILABLE"));
+
+        CopyLabel label = service.findLabels(List.of(1L)).get(0);
+
+        assertEquals(new java.math.BigDecimal("39.90"), label.salePrice());
+        assertEquals(ISBN + 1, label.code());
+    }
+
+    @Test
+    @DisplayName("livro sem preço: etiqueta sem preço")
+    void labelWithoutPrice() {
+        store(TestData.copy(1, ISBN, 1, "L1", "AVAILABLE"));
+        assertNull(service.findLabels(List.of(1L)).get(0).salePrice());
     }
 }

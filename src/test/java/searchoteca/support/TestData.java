@@ -81,7 +81,7 @@ public final class TestData {
         c.setLocalCode(localCode);
         c.setDepartCode("DEP");
         c.setStatus(status);
-        c.setCopy_custom_code(isbn + "DEP" + localCode + index);
+        c.setCopy_custom_code(isbn + index);   // igual ao banco: ISBN + número do exemplar
         return c;
     }
 

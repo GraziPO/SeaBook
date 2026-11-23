@@ -5,8 +5,8 @@ import org.junit.jupiter.api.Test;
 import searchoteca.model.waitingLine.WaitlistNotice;
 import searchoteca.model.waitingLine.WaitlistReservedEvent;
 import searchoteca.repository.waitlist.WaitlistQueryRepository;
-import searchoteca.service.EmailService;
-import searchoteca.service.WaitlistService;
+import searchoteca.service.Email.EmailService;
+import searchoteca.service.catalog.WaitlistService;
 import searchoteca.service.users.AccountLifecycleService;
 
 import java.time.LocalDateTime;

@@ -29,8 +29,10 @@ import java.util.Map;
  * Login em três etapas:
  *   1. /login           senha  -> (termos pendentes?) termsToken
  *   2. /termos/accept    aceite -> mfaToken (código enviado por e-mail)
- *   3. /mfa/verify      código -> JWT de acesso
+ *   3. /mfa/verify      código -> JWT de acesso (+ mfaTrustToken, que lembra o navegador por 30 min)
  * Se os termos já foram aceitos, a etapa 2 é pulada. Se o MFA estiver desligado, a 3 também.
+ * A etapa 3 também é pulada quando o login traz um mfaTrustToken válido do mesmo usuário
+ * (MFA confirmado neste navegador há menos de mfa.trust-ttl-ms). A senha é conferida sempre.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -93,7 +95,7 @@ public class AuthController {
         if (!termsService.hasAcceptedCurrent(userDetails)) {
             return ResponseEntity.ok(termsService.challenge(userDetails));
         }
-        return ResponseEntity.ok(continueLogin(userDetails));
+        return ResponseEntity.ok(continueLogin(userDetails, loginRequest.mfaTrustToken()));
     }
 
     /** Etapa 2: registra o aceite dos Termos e da Política e segue para o MFA. */
@@ -101,14 +103,14 @@ public class AuthController {
     public ResponseEntity<?> acceptTerms(@RequestBody TermsAcceptRequest request) {
         CustomUserDetails userDetails = termsService.accept(
                 request.termsToken(), request.termsVersion(), request.privacyVersion());
-        return ResponseEntity.ok(continueLogin(userDetails));
+        return ResponseEntity.ok(continueLogin(userDetails, null));   // aceite novo: confirma o MFA de novo
     }
 
-    /** Etapa 3: confere o código do e-mail e devolve o JWT de acesso. */
+    /** Etapa 3: confere o código do e-mail e devolve o JWT de acesso, já lembrando este navegador. */
     @PostMapping("/mfa/verify")
     public ResponseEntity<?> verifyMFAToken(@RequestBody MfaVerifyRequest request) {   // antes: <LoginResponse>
         CustomUserDetails userDetails = mfaService.verify(request.mfaToken(), request.code());
-        return ResponseEntity.ok(finishLogin(userDetails));                            // antes: issueFullToken
+        return ResponseEntity.ok(withMfaTrust(finishLogin(userDetails), userDetails));
     }
 
     /** Gera e envia um novo código (o anterior deixa de valer). */
@@ -117,12 +119,29 @@ public class AuthController {
         return ResponseEntity.ok(mfaService.resend(request.mfaToken()));
     }
 
-    /** Depois da senha e do aceite: envia o código do MFA ou, se estiver desligado, já libera o acesso. */
-    private Object continueLogin(CustomUserDetails userDetails) {
-        if (mfaEnabled) {
-            return mfaService.startChallenge(userDetails);
+    /**
+     * Depois da senha e do aceite: envia o código do MFA, a não ser que o MFA esteja desligado
+     * ou que este navegador tenha confirmado o código deste mesmo usuário há menos de 30 min.
+     */
+    private Object continueLogin(CustomUserDetails userDetails, String mfaTrustToken) {
+        if (!mfaEnabled) {
+            return finishLogin(userDetails);
         }
-        return finishLogin(userDetails);          // antes: issueFullToken
+        if (mfaTrustToken != null && jwtService.isMfaTrustValid(mfaTrustToken, userDetails)) {
+            auditLogService.save(userDetails.getUsername(), AuditAction.MFA_TRUSTED,
+                    "MFA confirmado neste navegador há menos de " + jwtService.getMfaTrustTtlSeconds() / 60 + " min");
+            return finishLogin(userDetails);   // o token de confiança NÃO é renovado: vale 30 min desde o último código
+        }
+        return mfaService.startChallenge(userDetails);
+    }
+
+    /** Anexa o token que lembra o navegador quando o login terminou logo depois de um MFA confirmado. */
+    private Object withMfaTrust(Object result, CustomUserDetails userDetails) {
+        if (mfaEnabled && jwtService.isMfaTrustEnabled() && result instanceof LoginResponse response) {
+            return response.withMfaTrust(jwtService.generateMfaTrustToken(userDetails),
+                    jwtService.getMfaTrustTtlSeconds());
+        }
+        return result;
     }
 
     private LoginResponse issueFullToken(CustomUserDetails userDetails) {
@@ -160,6 +179,7 @@ public class AuthController {
     public ResponseEntity<LoginResponse> firstAccess(@RequestBody FirstAccessRequest request) {
         CustomUserDetails userDetails = passwordChangeService.completeFirstAccess(
                 request.passwordChangeToken(), request.newPassword());
-        return ResponseEntity.ok(issueFullToken(userDetails));
+        // o primeiro acesso só chega aqui depois do MFA (quando ligado): já lembra o navegador
+        return ResponseEntity.ok((LoginResponse) withMfaTrust(issueFullToken(userDetails), userDetails));
     }
 }

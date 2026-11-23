@@ -16,6 +16,7 @@ public enum AuditAction {
     MFA_SUCCESS,
     MFA_FAILURE,
     MFA_LOCKED,
+    MFA_TRUSTED,          // código não pedido: o navegador confirmou o MFA há menos de 30 min
     TERMS_ACCEPTED,
     PASSWORD_RESET_REQUESTED,
     PASSWORD_RESET_FAILURE,
@@ -25,7 +26,9 @@ public enum AuditAction {
     WAITLIST_LEFT,
     WAITLIST_RESERVED,
     WAITLIST_FULFILLED,
-    WAITLIST_EXPIRED, LOGIN_BLOCKED,
+    WAITLIST_EXPIRED,
+    WAITLIST_CLOSED,      // fila encerrada: o título ficou sem exemplares no acervo
+    LOGIN_BLOCKED,
     ACCOUNT_REQUEST_APPROVED,
     ACCOUNT_REQUEST_REJECTED,
     USER_ANONYMIZED, LOGIN_LOCKED,

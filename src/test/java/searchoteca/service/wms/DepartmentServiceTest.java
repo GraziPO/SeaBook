@@ -108,4 +108,27 @@ class DepartmentServiceTest {
         assertEquals(1, service.findBookByDepartCode("CIE").size());
         assertThrows(ResourceNotFoundException.class, () -> service.findBookByDepartCode(null));
     }
+
+    // ------------------------------------------------------------------ descrição opcional
+
+    @Test
+    @DisplayName("descrição é opcional: em branco vira null no cadastro e na edição; com texto, sem espaços nas pontas")
+    void optionalDescription() {
+        when(departmentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        DepartmentModel blank = TestData.department("ART");
+        blank.setDepartDesc("   ");
+        assertNull(service.create(blank).getDepartDesc());
+
+        DepartmentModel none = TestData.department("MUS");
+        none.setDepartDesc(null);
+        assertNull(service.create(none).getDepartDesc());
+
+        DepartmentModel info = TestData.department("CIE");
+        info.setDepartDesc("");
+        assertNull(service.update("CIE", info).getDepartDesc());
+
+        info.setDepartDesc("  Bloco C  ");
+        assertEquals("Bloco C", service.update("CIE", info).getDepartDesc());
+    }
 }

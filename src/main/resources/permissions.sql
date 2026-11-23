@@ -53,7 +53,6 @@ INSERT INTO sys_permissions (permission_code, resource, action, description) VAL
     ('dashboard:view', 'dashboard', 'view', 'Visualizar dashboard administrativo'),
 
     ('waitlist:join', 'waitlist', 'join', 'Acesso a fila de espera da biblioteca'),
-
     ('waitlist:view', 'waitlist', 'view', 'Visualiza a fila de espera da biblioteca'),
 
     ('account:request', 'account', 'request', 'Pedir desativação da Conta'),

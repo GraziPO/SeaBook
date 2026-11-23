@@ -2,6 +2,7 @@ package searchoteca.service.users;
 
 import org.springframework.data.domain.Sort;
 import searchoteca.DTO.archive.publicSearch.PageResponse;
+import searchoteca.components.Emails;
 import searchoteca.components.Paging;
 import searchoteca.DTO.users.UserRow;
 import searchoteca.repository.users.UserQueryRepository;
@@ -16,6 +17,7 @@ import searchoteca.auditTrail.AuditLogService;
 import org.springframework.transaction.annotation.Transactional;
 import searchoteca.exception.ResourceConflictException;
 import searchoteca.exception.ResourceNotFoundException;
+import searchoteca.mfa.EmailMasker;
 import searchoteca.model.RoleModel;
 import searchoteca.model.StudentModel;
 import searchoteca.model.UserModel;
@@ -25,7 +27,7 @@ import searchoteca.repository.users.StudentRepository;
 import searchoteca.repository.users.UserRepository;
 import searchoteca.resetPassword.PasswordPolicy;
 import searchoteca.security.CurrentUser;
-import searchoteca.service.WaitlistService;
+import searchoteca.service.catalog.WaitlistService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -78,6 +80,8 @@ public class UserService {
         if (user.getUsername() == null || user.getUsername().isBlank()) {
             throw new ResourceConflictException("o username não pode estar vazio.");
         }
+        user.setEmail(user.getEmail());               // minúsculas, mesmo se o objeto veio montado sem o setter
+        requireEmailFree(user.getEmail(), null);
         user.setPassword(passwordEncoder.encode(user.getUsername()));
         user.setStatus(true);
         user.setMust_change_password(true);
@@ -89,9 +93,42 @@ public class UserService {
         return (List<UserModel>)userRepository.findAll();
     }
 
-    /** Lista paginada em ordem de username, separada em operadores e alunos (abas da tela). */
+    /**
+     * Lista paginada em ordem de username, separada em operadores e alunos (abas da tela).
+     * O e-mail sai mascarado (m****a@escola.com): o endereço completo não chega ao navegador.
+     * Na edição, e-mail mascarado ou em branco mantém o atual (ver emailForUpdate).
+     */
     public PageResponse<UserRow> findPage(boolean students, int page, int size){
-        return userQueryRepository.search(students, Paging.of(page, size, Sort.unsorted()));
+        PageResponse<UserRow> result = userQueryRepository.search(students, Paging.of(page, size, Sort.unsorted()));
+        List<UserRow> masked = result.content().stream()
+                .map(u -> new UserRow(u.userId(), u.username(), u.completeName(),
+                        u.email() == null ? null : EmailMasker.mask(u.email()),
+                        u.roleCode(), u.status(), u.ra()))
+                .toList();
+        return new PageResponse<>(masked, result.page(), result.size(), result.totalElements(), result.totalPages());
+    }
+
+    /**
+     * A lista devolve o e-mail mascarado, e é ele que chega preenchido no "Editar".
+     * Se voltar igual à máscara do atual (ou em branco), a pessoa não mexeu: mantém o e-mail atual.
+     */
+    static String emailForUpdate(String current, String received) {
+        if (received == null || received.isBlank()) return current;
+        String typed = Emails.normalize(received);
+        if (current != null && typed.equals(Emails.normalize(EmailMasker.mask(current)))) return current;
+        return typed;
+    }
+
+    /**
+     * Um e-mail por conta, sem diferença entre maiúsculas e minúsculas (o e-mail recebe o MFA e a
+     * recuperação de senha). ownerId: o próprio usuário, na edição; null no cadastro.
+     */
+    void requireEmailFree(String email, Long ownerId) {
+        if (email == null || email.isBlank()) return;
+        UserModel other = userRepository.findByEmail(Emails.normalize(email));
+        if (other != null && !other.getUserId().equals(ownerId)) {
+            throw new ResourceConflictException("Já existe um usuário com esse e-mail.");
+        }
     }
 
     public UserModel findByUsername(String username){
@@ -111,17 +148,21 @@ public class UserService {
         requireRootCallerIf(isRootRole(up_user.getRole_code()) || (newRole != null && newRole.isRoot()));
 
         boolean passwordChanged = user.getPassword() != null && !user.getPassword().isBlank();
+        String newEmail = emailForUpdate(up_user.getEmail(), user.getEmail());
+        if (!java.util.Objects.equals(newEmail, Emails.normalize(up_user.getEmail()))) {
+            requireEmailFree(newEmail, up_user.getUserId());
+        }
 
         // antes de alterar: o que está no banco x o que chegou (RF22). A senha só aparece como "alterada".
         AuditDiff diff = new AuditDiff()
                 .field("nome", up_user.getCompleteName(), user.getCompleteName())
-                .field("e-mail", up_user.getEmail(), user.getEmail())
+                .field("e-mail", up_user.getEmail(), newEmail)
                 .field("perfil", up_user.getRole_code(), newRole == null ? up_user.getRole_code() : newRole.getRoleCode())
                 .secret("senha", passwordChanged);
 
         up_user.setUsername(username);
         up_user.setCompleteName(user.getCompleteName());
-        up_user.setEmail(user.getEmail());
+        up_user.setEmail(newEmail);
         if (newRole != null) {
             up_user.setRole_code(newRole.getRoleCode());
         }

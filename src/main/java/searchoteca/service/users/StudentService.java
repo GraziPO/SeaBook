@@ -4,6 +4,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchoteca.DTO.users.student.StudentRequest;
+import searchoteca.components.Emails;
 import searchoteca.exception.ResourceConflictException;
 import searchoteca.model.StudentModel;
 import searchoteca.model.UserModel;
@@ -30,10 +31,13 @@ public class StudentService {
         UserModel basicUser = new UserModel();
         basicUser.setUsername(request.username());
         basicUser.setCompleteName(request.completeName());
-        basicUser.setEmail(request.email());
+        basicUser.setEmail(request.email());   // o setter guarda em minúsculas
 
         if (request.ra() == null || request.ra().isBlank()) {
             throw new ResourceConflictException("Informe o RA do aluno.");
+        }
+        if (basicUser.getEmail() != null && userRepository.findByEmail(Emails.normalize(basicUser.getEmail())) != null) {
+            throw new ResourceConflictException("Já existe um usuário com esse e-mail.");
         }
 
         basicUser.setPassword(passwordEncoder.encode(request.ra()));

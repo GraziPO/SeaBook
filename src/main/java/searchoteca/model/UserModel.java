@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 import org.springframework.data.relational.core.mapping.Column;
+import searchoteca.components.Emails;
 
 import java.time.LocalDateTime;
 
@@ -34,5 +35,13 @@ public class UserModel {
     private LocalDateTime passwordChangedAt;
 
     public UserModel() {}
+
+    /**
+     * Toda gravação passa por aqui (cadastro, edição, JSON recebido do frontend): o e-mail é guardado
+     * em minúsculas e sem espaços nas pontas. O Lombok não gera este setter porque ele já existe.
+     */
+    public void setEmail(String email) {
+        this.email = Emails.normalize(email);
+    }
 
 }

@@ -186,4 +186,118 @@ class AuthControllerTest {
         assertEquals("jwt-completo",
                 controller(true).firstAccess(new FirstAccessRequest("jwt-troca", "NovaSenha1")).getBody().token());
     }
+
+    // ------------------------------------------------------------------ MFA lembrado (30 min)
+
+    @Test
+    @DisplayName("MFA lembrado: navegador confirmou o código há menos de 30 min -> pula o MFA e audita")
+    void loginWithValidTrustSkipsMfa() {
+        passwordOk(maria);
+        when(terms.hasAcceptedCurrent(maria)).thenReturn(true);
+        when(jwt.isMfaTrustValid("confianca", maria)).thenReturn(true);
+        when(jwt.getMfaTrustTtlSeconds()).thenReturn(1800L);
+
+        LoginResponse r = (LoginResponse) controller(true).login(new LoginRequest("maria", "senha", "confianca")).getBody();
+
+        assertEquals("jwt-completo", r.token());
+        assertNull(r.mfaTrustToken());                          // não renova: vale 30 min desde o último código
+        verify(mfa, never()).startChallenge(any());
+        verify(audit).save(eq("maria"), eq(AuditAction.MFA_TRUSTED), contains("30 min"));
+        verify(audit).recordLogin("maria");
+    }
+
+    @Test
+    @DisplayName("MFA lembrado: token vencido, de outro usuário ou adulterado -> pede o código normalmente")
+    void loginWithInvalidTrustAsksMfa() {
+        passwordOk(maria);
+        when(terms.hasAcceptedCurrent(maria)).thenReturn(true);
+        when(jwt.isMfaTrustValid("vencido", maria)).thenReturn(false);
+        MfaChallengeResponse challenge = new MfaChallengeResponse(true, "mfa", "m***a@escola.com", 600);
+        when(mfa.startChallenge(maria)).thenReturn(challenge);
+
+        assertSame(challenge, controller(true).login(new LoginRequest("maria", "senha", "vencido")).getBody());
+        verify(jwt, never()).generateToken(any());
+    }
+
+    @Test
+    @DisplayName("MFA lembrado: senha errada continua barrando, mesmo com token de confiança")
+    void trustDoesNotSkipPassword() {
+        when(authManager.authenticate(any())).thenThrow(new BadCredentialsException("x"));
+        assertThrows(BadCredentialsException.class,
+                () -> controller(true).login(new LoginRequest("maria", "errada", "confianca")));
+        verifyNoInteractions(jwt);
+    }
+
+    @Test
+    @DisplayName("MFA lembrado: termos pendentes vêm antes, e o aceite pede o código de novo")
+    void trustDoesNotSkipTerms() {
+        passwordOk(maria);
+        TermsChallengeResponse tc = new TermsChallengeResponse(true, "t", "2.0", "2.0");
+        when(terms.challenge(maria)).thenReturn(tc);
+        assertSame(tc, controller(true).login(new LoginRequest("maria", "senha", "confianca")).getBody());
+        verify(jwt, never()).isMfaTrustValid(any(), any());
+    }
+
+    @Test
+    @DisplayName("MFA lembrado: com MFA desligado o token nem é olhado")
+    void trustIgnoredWhenMfaDisabled() {
+        passwordOk(maria);
+        when(terms.hasAcceptedCurrent(maria)).thenReturn(true);
+        LoginResponse r = (LoginResponse) controller(false).login(new LoginRequest("maria", "senha", "confianca")).getBody();
+        assertEquals("jwt-completo", r.token());
+        verify(jwt, never()).isMfaTrustValid(any(), any());
+        verify(jwt, never()).generateMfaTrustToken(any());
+    }
+
+    @Test
+    @DisplayName("código confirmado: além do JWT, devolve o token que lembra o navegador por 30 min")
+    void verifyReturnsTrustToken() {
+        when(mfa.verify("mfa", "123456")).thenReturn(maria);
+        when(jwt.isMfaTrustEnabled()).thenReturn(true);
+        when(jwt.generateMfaTrustToken(maria)).thenReturn("confianca");
+        when(jwt.getMfaTrustTtlSeconds()).thenReturn(1800L);
+
+        LoginResponse r = (LoginResponse) controller(true).verifyMFAToken(new MfaVerifyRequest("mfa", "123456")).getBody();
+
+        assertEquals("jwt-completo", r.token());
+        assertEquals("confianca", r.mfaTrustToken());
+        assertEquals(1800L, r.mfaTrustExpiresInSeconds());
+    }
+
+    @Test
+    @DisplayName("código confirmado mas falta trocar a senha: não lembra o navegador ainda")
+    void verifyWithPasswordChangeHasNoTrust() {
+        UserModel u = TestData.user(10L, "maria", "students");
+        u.setMust_change_password(true);
+        CustomUserDetails first = TestData.details(u);
+        when(mfa.verify("mfa", "123456")).thenReturn(first);
+        when(jwt.isMfaTrustEnabled()).thenReturn(true);
+
+        Object body = controller(true).verifyMFAToken(new MfaVerifyRequest("mfa", "123456")).getBody();
+
+        assertInstanceOf(PasswordChangeChallengeResponse.class, body);
+        verify(jwt, never()).generateMfaTrustToken(any());
+    }
+
+    @Test
+    @DisplayName("primeiro acesso concluído: lembra o navegador (o MFA já foi feito antes da troca)")
+    void firstAccessReturnsTrustToken() {
+        when(changeService.completeFirstAccess("jwt-troca", "NovaSenha1")).thenReturn(maria);
+        when(jwt.isMfaTrustEnabled()).thenReturn(true);
+        when(jwt.generateMfaTrustToken(maria)).thenReturn("confianca");
+        when(jwt.getMfaTrustTtlSeconds()).thenReturn(1800L);
+
+        LoginResponse r = controller(true).firstAccess(new FirstAccessRequest("jwt-troca", "NovaSenha1")).getBody();
+
+        assertEquals("confianca", r.mfaTrustToken());
+    }
+
+    @Test
+    @DisplayName("recurso desligado (mfa.trust-ttl-ms = 0): o código confirmado não gera token de confiança")
+    void verifyWithTrustDisabled() {
+        when(mfa.verify("mfa", "123456")).thenReturn(maria);
+        when(jwt.isMfaTrustEnabled()).thenReturn(false);
+        LoginResponse r = (LoginResponse) controller(true).verifyMFAToken(new MfaVerifyRequest("mfa", "123456")).getBody();
+        assertNull(r.mfaTrustToken());
+    }
 }

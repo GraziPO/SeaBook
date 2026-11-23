@@ -1,4 +1,4 @@
-package searchoteca.service;
+package searchoteca.service.Email;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,10 +16,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Envio pela API HTTP do Resend (POST https://api.resend.com/emails),
- * usando o RestClient do próprio Spring. Não precisa de dependência nova no pom.xml.
- */
 @Service
 public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
@@ -62,7 +58,7 @@ public class EmailService {
         Map<String, Object> body = Map.of(
                 "from", from,
                 "to", List.of(to),
-                "subject", "Seu código de acesso - Searchoteca",
+                "subject", "Seu código de acesso - SeaBook",
                 "text", text,
                 "html", html
         );
@@ -98,7 +94,7 @@ public class EmailService {
                 + "<p>Ele expira em " + ttlMinutes + " minutos.</p>"
                 + "<p style=\"color:#666\">Se não foi você, ignore este e-mail. Sua senha continua a mesma.</p>";
 
-        sendResetCode(to, "Redefinição de Senha - Searchtec", text, html);
+        sendResetCode(to, "Redefinição de Senha - SeaBook", text, html);
     }
 
     private void sendResetCode(String to, String subject, String text, String html){
@@ -112,7 +108,7 @@ public class EmailService {
         Map<String, Object> body = Map.of(
                 "from", from,
                 "to", List.of(to),
-                "subject", "Seu código de acesso - Searchoteca",
+                "subject", "Seu código de acesso - SeaBook",
                 "text", text,
                 "html", html
         );
@@ -155,7 +151,7 @@ public class EmailService {
                 + "<p>Retire no balcão <strong>" + prazo + "</strong>.</p>"
                 + "<p style=\"color:#666\">Depois desse prazo, a reserva passa para o próximo aluno da fila.</p>";
 
-        send(to, "Seu livro está reservado - Searchoteca", text, html, "aviso da fila de espera");
+        send(to, "Seu livro está reservado - SeaBook", text, html, "aviso da fila de espera");
     }
 
     /** Envio genérico pelo Resend, usado pelos avisos que não são códigos de acesso. */
